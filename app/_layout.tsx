@@ -16,6 +16,9 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="Detail_surat" options={{ headerShown: false }} />
+        <Stack.Screen name="Detail_doa" options={{ title: 'Detail Doa' }} />
+        <Stack.Screen name="Detail_hadits" options={{ title: 'Detail Hadits' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
