@@ -1,5 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio, AVPlaybackStatusSuccess } from 'expo-av';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,6 +18,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  getAyahBookmarks,
+  getSurahBookmarks,
+  toggleAyahBookmarkStorage,
+  toggleSurahBookmarkStorage,
+} from '@/lib/quran-bookmarks';
 
 interface Ayat {
   id: number;
@@ -54,9 +61,10 @@ type ReciterOption = {
 };
 
 type LoopMode = 'off' | 'ayah' | 'surah';
+const BASMALAH_TEXT = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
 
 export default function Detail_surat() {
-  const { nomor } = useLocalSearchParams<{ nomor: string }>();
+  const { nomor, ayah } = useLocalSearchParams<{ nomor: string; ayah?: string }>();
   const router = useRouter();
 
   const initialSurah = Number(nomor) || 1;
@@ -78,6 +86,9 @@ export default function Detail_surat() {
   const [durationMillis, setDurationMillis] = useState(0);
   const [progressBarWidth, setProgressBarWidth] = useState(1);
   const [loopMode, setLoopMode] = useState<LoopMode>('off');
+  const [surahBookmarked, setSurahBookmarked] = useState(false);
+  const [swipeNotice, setSwipeNotice] = useState<string | null>(null);
+  const [isAudioBusy, setIsAudioBusy] = useState(false);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const flatListRef = useRef<FlatList<Ayat> | null>(null);
@@ -86,6 +97,7 @@ export default function Detail_surat() {
   const playingContextRef = useRef<{ surahNo: number; ayahNo: number } | null>(null);
   const selectedReciterRef = useRef<string | null>(null);
   const loopModeRef = useRef<LoopMode>('off');
+  const swipeNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     selectedReciterRef.current = selectedReciterId;
@@ -100,6 +112,14 @@ export default function Detail_surat() {
   }, [nomor]);
 
   const getVerseKey = (surahNo: number, ayahNo: number) => `${surahNo}:${ayahNo}`;
+
+  const showSwipeChangeNotice = (label: string) => {
+    if (swipeNoticeTimeoutRef.current) clearTimeout(swipeNoticeTimeoutRef.current);
+    setSwipeNotice(label);
+    swipeNoticeTimeoutRef.current = setTimeout(() => {
+      setSwipeNotice(null);
+    }, 900);
+  };
 
   const scrollToAyah = useCallback((surahNo: number, ayahNo: number, animated = true) => {
     if (!data || data.nomor !== surahNo) return;
@@ -120,11 +140,6 @@ export default function Detail_surat() {
     return reciters.find((item) => item.id === selectedReciterId)?.name ?? null;
   }, [reciters, selectedReciterId]);
 
-  const headerArabic = useMemo(() => {
-    if (!data || data.nomor === 9) return '';
-    return data.ayat[0]?.ar ?? '';
-  }, [data]);
-
   const unloadSound = async () => {
     if (!soundRef.current) return;
 
@@ -137,7 +152,7 @@ export default function Detail_surat() {
     soundRef.current = null;
   };
 
-  const ensureSurahDetail = async (surahNo: number) => {
+  const ensureSurahDetail = useCallback(async (surahNo: number) => {
     const cached = surahCacheRef.current[surahNo];
     if (cached) return cached;
 
@@ -147,9 +162,9 @@ export default function Detail_surat() {
     const result = (await response.json()) as SurahDetail;
     surahCacheRef.current[surahNo] = result;
     return result;
-  };
+  }, []);
 
-  const getAudioForAyah = async (surahNo: number, ayahNo: number) => {
+  const getAudioForAyah = useCallback(async (surahNo: number, ayahNo: number) => {
     const cacheKey = `${surahNo}:${ayahNo}`;
     const cached = audioCacheRef.current[cacheKey];
     if (cached) return cached;
@@ -162,7 +177,13 @@ export default function Detail_surat() {
     const result = (await response.json()) as ReciterAudioMap;
     audioCacheRef.current[cacheKey] = result;
     return result;
-  };
+  }, []);
+
+  const warmAudioWindow = useCallback((surahNo: number, ayahNo: number) => {
+    void getAudioForAyah(surahNo, ayahNo).catch(() => undefined);
+    if (ayahNo > 1) void getAudioForAyah(surahNo, ayahNo - 1).catch(() => undefined);
+    void getAudioForAyah(surahNo, ayahNo + 1).catch(() => undefined);
+  }, [getAudioForAyah]);
 
   const stopPlayback = async () => {
     await unloadSound();
@@ -182,6 +203,11 @@ export default function Detail_surat() {
   };
 
   const playSpecificAyah = async (surahNo: number, ayahNo: number) => {
+    const verseKey = getVerseKey(surahNo, ayahNo);
+    setPlayingAyahKey(verseKey);
+    setIsPlaying(true);
+    setIsAudioBusy(true);
+
     try {
       const targetSurah = await moveToSurah(surahNo);
       const targetAyah = Math.max(1, Math.min(targetSurah.jumlah_ayat, ayahNo));
@@ -226,9 +252,13 @@ export default function Detail_surat() {
       setPlayingAyahKey(getVerseKey(targetSurah.nomor, targetAyah));
       setIsPlaying(true);
       scrollToAyah(targetSurah.nomor, targetAyah);
+      warmAudioWindow(targetSurah.nomor, targetAyah);
     } catch (error) {
       console.error('Failed to play ayah:', error);
+      setIsPlaying(false);
       Alert.alert('Gagal memutar audio', 'Coba lagi beberapa saat.');
+    } finally {
+      setIsAudioBusy(false);
     }
   };
 
@@ -281,21 +311,6 @@ export default function Detail_surat() {
     }
 
     await playSpecificAyah(ayah.surah, ayah.nomor);
-  };
-
-  const seekRelative = async (deltaMs: number) => {
-    if (!soundRef.current) return;
-
-    const status = await soundRef.current.getStatusAsync();
-    if (!status.isLoaded) return;
-
-    const loaded = status as AVPlaybackStatusSuccess;
-    const duration = loaded.durationMillis ?? 0;
-    const current = loaded.positionMillis ?? 0;
-    const nextPos = Math.max(0, Math.min(duration, current + deltaMs));
-
-    await soundRef.current.setPositionAsync(nextPos);
-    setPositionMillis(nextPos);
   };
 
   const seekByRatio = async (ratio: number) => {
@@ -364,11 +379,16 @@ export default function Detail_surat() {
 
     if (hasPlayback) {
       await playSpecificAyah(target, 1);
+      const targetDetail = await ensureSurahDetail(target);
+      showSwipeChangeNotice(`Surat ${targetDetail.nomor} · ${targetDetail.nama_latin}`);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       return;
     }
 
     try {
-      await moveToSurah(target);
+      const targetDetail = await moveToSurah(target);
+      showSwipeChangeNotice(`Surat ${targetDetail.nomor} · ${targetDetail.nama_latin}`);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (error) {
       console.error('Failed to load surah:', error);
       Alert.alert('Gagal memuat surat', 'Coba lagi beberapa saat.');
@@ -402,12 +422,36 @@ export default function Detail_surat() {
     });
   };
 
-  const toggleBookmark = (ayah: Ayat) => {
-    const key = getVerseKey(ayah.surah, ayah.nomor);
-    setBookmarks((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  const toggleSurahBookmark = async () => {
+    if (!data) return;
+    const result = await toggleSurahBookmarkStorage({
+      nomor: data.nomor,
+      nama: data.nama,
+      nama_latin: data.nama_latin,
+      jumlah_ayat: data.jumlah_ayat,
+      tempat_turun: data.tempat_turun,
+      arti: data.arti,
+    });
+    setSurahBookmarked(result.bookmarked);
+  };
+
+  const toggleBookmark = async (ayah: Ayat) => {
+    if (!data) return;
+
+    const result = await toggleAyahBookmarkStorage({
+      surahNo: ayah.surah,
+      surahNama: data.nama,
+      surahLatin: data.nama_latin,
+      ayahNo: ayah.nomor,
+      arabic: ayah.ar,
+      translation: ayah.idn,
+    });
+
+    const map = result.list.reduce<Record<string, boolean>>((acc, item) => {
+      acc[item.key] = true;
+      return acc;
+    }, {});
+    setBookmarks(map);
   };
 
   const shareAyah = async (ayah: Ayat) => {
@@ -429,7 +473,9 @@ export default function Detail_surat() {
     Alert.alert('Aksi Ayat', `${data?.nama_latin} ${data?.nomor}:${ayah.nomor}`, [
       {
         text: isBookmarked ? 'Hapus Bookmark' : 'Tambah Bookmark',
-        onPress: () => toggleBookmark(ayah),
+        onPress: () => {
+          void toggleBookmark(ayah);
+        },
       },
       {
         text: 'Bagikan Ayat',
@@ -464,29 +510,33 @@ export default function Detail_surat() {
     onPanResponderRelease: (_, gestureState) => {
       if (Math.abs(gestureState.dx) < 70) return;
       if (gestureState.dx > 0) {
-        void jumpSurah(1);
-      } else {
         void jumpSurah(-1);
+      } else {
+        void jumpSurah(1);
       }
     },
   });
 
   useEffect(() => {
-    let cancelled = false;
-
     const setupAudio = async () => {
       try {
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           staysActiveInBackground: true,
           playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
+          shouldDuckAndroid: false,
           playThroughEarpieceAndroid: false,
         });
       } catch (error) {
         console.error('Failed to set audio mode:', error);
       }
     };
+
+    void setupAudio();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
 
     const loadSurah = async () => {
       setLoading(true);
@@ -502,13 +552,12 @@ export default function Detail_surat() {
       }
     };
 
-    void setupAudio();
     void loadSurah();
 
     return () => {
       cancelled = true;
     };
-  }, [currentSurahNo]);
+  }, [currentSurahNo, ensureSurahDetail]);
 
   useEffect(() => {
     let cancelled = false;
@@ -545,10 +594,35 @@ export default function Detail_surat() {
     return () => {
       cancelled = true;
     };
-  }, [data?.nomor, data?.ayat]);
+  }, [data?.nomor, data?.ayat, getAudioForAyah]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBookmarks = async () => {
+      const [ayahList, surahList] = await Promise.all([getAyahBookmarks(), getSurahBookmarks()]);
+      if (cancelled) return;
+
+      const ayahMap = ayahList.reduce<Record<string, boolean>>((acc, item) => {
+        acc[item.key] = true;
+        return acc;
+      }, {});
+      setBookmarks(ayahMap);
+
+      if (data) {
+        setSurahBookmarked(surahList.some((item) => item.nomor === data.nomor));
+      }
+    };
+
+    void loadBookmarks();
+    return () => {
+      cancelled = true;
+    };
+  }, [data, warmAudioWindow]);
 
   useEffect(() => {
     return () => {
+      if (swipeNoticeTimeoutRef.current) clearTimeout(swipeNoticeTimeoutRef.current);
       void unloadSound();
     };
   }, []);
@@ -560,6 +634,18 @@ export default function Detail_surat() {
 
     scrollToAyah(current.surahNo, current.ayahNo);
   }, [playingAyahKey, data, scrollToAyah]);
+
+  useEffect(() => {
+    if (!data || !ayah) return;
+    const targetAyahNo = Number(ayah);
+    if (!Number.isFinite(targetAyahNo) || targetAyahNo < 1) return;
+    scrollToAyah(data.nomor, targetAyahNo, true);
+  }, [ayah, data, scrollToAyah]);
+
+  useEffect(() => {
+    if (!data?.nomor || !data.ayat?.length) return;
+    warmAudioWindow(data.nomor, data.ayat[0].nomor);
+  }, [data, warmAudioWindow]);
 
   if (loading) {
     return (
@@ -610,9 +696,19 @@ export default function Detail_surat() {
 
               <Text style={styles.topTitle}>QURAN</Text>
 
-              <Pressable onPress={() => void refreshSurah()} hitSlop={10} style={styles.moreBtn}>
-                <Ionicons name="ellipsis-horizontal" size={18} color="#2A1F12" />
-              </Pressable>
+              <View style={styles.topRightActions}>
+                <Pressable onPress={() => void toggleSurahBookmark()} hitSlop={10} style={styles.moreBtn}>
+                  <Ionicons
+                    name={surahBookmarked ? 'bookmark' : 'bookmark-outline'}
+                    size={18}
+                    color={surahBookmarked ? '#B06D1B' : '#2A1F12'}
+                  />
+                </Pressable>
+
+                <Pressable onPress={() => void refreshSurah()} hitSlop={10} style={styles.moreBtn}>
+                  <Ionicons name="refresh-outline" size={18} color="#2A1F12" />
+                </Pressable>
+              </View>
             </View>
 
             <ImageBackground
@@ -626,9 +722,10 @@ export default function Detail_surat() {
                 {data.arti} - {data.jumlah_ayat} Ayahs
               </Text>
               <Text style={styles.bismillah} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                {headerArabic}
+                {BASMALAH_TEXT}
               </Text>
             </ImageBackground>
+            <Text style={styles.swipeHint}>Geser kiri/kanan untuk pindah surat</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -663,7 +760,11 @@ export default function Detail_surat() {
                   />
                 </Pressable>
 
-                <Pressable style={[styles.actionBtn, isCurrent && styles.actionBtnActive]} onPress={() => toggleBookmark(item)}>
+                <Pressable
+                  style={[styles.actionBtn, isCurrent && styles.actionBtnActive]}
+                  onPress={() => {
+                    void toggleBookmark(item);
+                  }}>
                   <Ionicons
                     name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
                     size={18}
@@ -684,10 +785,21 @@ export default function Detail_surat() {
         }}
       />
 
+      {swipeNotice ? (
+        <View style={styles.swipeNotice}>
+          <Ionicons name="swap-horizontal" size={14} color="#8A5B28" />
+          <Text style={styles.swipeNoticeText}>{swipeNotice}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.playerCard}>
         <View style={styles.playerTopRow}>
           <Text style={styles.playerTitle} numberOfLines={1}>
-            {playingAyahKey ? `${data.nama_latin} ${playingAyahKey.split(':')[1]}` : 'Belum ada ayat diputar'}
+            {isAudioBusy
+              ? 'Menyiapkan audio...'
+              : playingAyahKey
+              ? `${data.nama_latin} ${playingAyahKey.split(':')[1]}`
+              : 'Belum ada ayat diputar'}
           </Text>
           <Pressable style={styles.loopBtn} onPress={toggleLoopMode}>
             <Ionicons name="repeat" size={16} color="#8A5B28" />
@@ -738,6 +850,7 @@ export default function Detail_surat() {
           <Pressable
             style={[styles.playPauseBtn, !playingAyahKey && styles.playPauseBtnDisabled]}
             onPress={() => {
+              if (isAudioBusy) return;
               if (!playingAyahKey) {
                 void playSpecificAyah(data.nomor, 1);
                 return;
@@ -750,7 +863,11 @@ export default function Detail_surat() {
                 setIsPlaying(true);
               }
             }}>
-            <Ionicons name={isPlaying ? 'pause' : 'play'} size={20} color="#FFF9EE" />
+            <Ionicons
+              name={isAudioBusy ? 'hourglass-outline' : isPlaying ? 'pause' : 'play'}
+              size={20}
+              color="#FFF9EE"
+            />
           </Pressable>
 
           <Pressable style={styles.controlBtn} onPress={() => void playNextAyah()}>
@@ -764,12 +881,7 @@ export default function Detail_surat() {
           </Pressable>
         </View>
 
-        <View style={styles.seekRow}>
-          <Pressable style={styles.seekBtn} onPress={() => void seekRelative(-10000)}>
-            <Ionicons name="play-back" size={16} color="#8A5B28" />
-            <Text style={styles.seekText}>-10s</Text>
-          </Pressable>
-
+        <View style={styles.stopRow}>
           <Pressable
             style={styles.seekBtn}
             onPress={() => {
@@ -777,11 +889,6 @@ export default function Detail_surat() {
             }}>
             <Ionicons name="stop-circle-outline" size={16} color="#8A5B28" />
             <Text style={styles.seekText}>Stop</Text>
-          </Pressable>
-
-          <Pressable style={styles.seekBtn} onPress={() => void seekRelative(10000)}>
-            <Ionicons name="play-forward" size={16} color="#8A5B28" />
-            <Text style={styles.seekText}>+10s</Text>
           </Pressable>
         </View>
       </View>
@@ -853,32 +960,51 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingTop: 2,
   },
+  swipeHint: {
+    textAlign: 'center',
+    color: '#8A7255',
+    fontSize: 11,
+    marginTop: 6,
+    fontWeight: '600',
+  },
   topBar: {
-    minHeight: 40,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
   },
   backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFF9ED',
+    borderWidth: 1,
+    borderColor: '#EADBC0',
   },
   moreBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFF9ED',
+    borderWidth: 1,
+    borderColor: '#EADBC0',
+  },
+  topRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   topTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
     letterSpacing: 0.4,
     color: '#2A1F12',
+    fontFamily: 'serif',
   },
   surahCard: {
     minHeight: 152,
@@ -980,6 +1106,26 @@ const styles = StyleSheet.create({
   actionBtnActive: {
     backgroundColor: '#F9E8CA',
     borderColor: '#E7CCA3',
+  },
+  swipeNotice: {
+    position: 'absolute',
+    top: 188,
+    alignSelf: 'center',
+    zIndex: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 14,
+    backgroundColor: '#FFF0D5',
+    borderWidth: 1,
+    borderColor: '#E8CE9F',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  swipeNoticeText: {
+    color: '#7A4A17',
+    fontSize: 12,
+    fontWeight: '700',
   },
   playerCard: {
     position: 'absolute',
@@ -1091,7 +1237,7 @@ const styles = StyleSheet.create({
   playPauseBtnDisabled: {
     opacity: 0.88,
   },
-  seekRow: {
+  stopRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',

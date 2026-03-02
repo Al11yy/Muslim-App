@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "Muslim-app",
+    "name": "",
     "slug": "Muslim-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo-AlUkhuwah-noBg.png",
     "scheme": "muslimapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "NSCameraUsageDescription": "Aplikasi membutuhkan akses kamera untuk fitur arah kiblat berbasis kamera.",
+        "NSMicrophoneUsageDescription": "Aplikasi membutuhkan akses mikrofon untuk kompatibilitas penggunaan kamera web.",
+        "NSLocationWhenInUseUsageDescription": "Aplikasi membutuhkan lokasi untuk menentukan arah kiblat dengan akurat.",
         "UIBackgroundModes": [
           "audio"
         ]
@@ -18,6 +21,11 @@
     },
     "android": {
       "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "WAKE_LOCK",
         "FOREGROUND_SERVICE"
       ],
@@ -32,14 +40,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/logo-AlUkhuwah-noBg.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/logo-AlUkhuwah-noBg.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

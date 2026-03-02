@@ -1,487 +1,501 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
-  Dimensions,
+  Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { COLORS } from '@/constants/colors';
+import { useThemePreference } from '@/contexts/theme-preference';
+import { usePrayerTimes } from '@/hooks/usePrayerTimes';
+import { useRealtimeClock } from '@/hooks/useRealtimeClock';
 
-type QuickMenuItem = {
+const ICON_COLOR = '#C68B2F';
+const ICON_BG = 'rgba(198,139,47,0.12)';
+
+type MenuItem = {
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  bg: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   route?: string;
 };
 
-const PRAYER_TIMES = [
-  { name: 'Subuh', time: '04:43', icon: 'sunny-outline' as const },
-  { name: 'Dzuhur', time: '12:09', icon: 'partly-sunny-outline' as const },
-  { name: 'Ashar', time: '15:12', icon: 'cloud-outline' as const },
-  { name: 'Maghrib', time: '18:15', icon: 'moon-outline' as const },
-  { name: 'Isya', time: '19:24', icon: 'star-outline' as const },
+const QUICK_MENU: MenuItem[] = [
+  { title: 'Al-Quran', icon: 'book-open-page-variant', route: '/Quran' },
+  { title: 'Doa Harian', icon: 'hands-pray', route: '/Doa_harian' },
+  { title: 'Dzikir', icon: 'heart-outline', route: '/Dzikir' },
+  { title: 'Hadits', icon: 'script-text-outline', route: '/Hadits' },
+  { title: 'Arah Kiblat', icon: 'compass-outline', route: '/Arah_kiblat' },
+  { title: 'Asmaul Husna', icon: 'star-crescent', route: '/Asmaul_husna' },
 ];
 
-const QUICK_MENU: QuickMenuItem[] = [
-  { title: 'Al-Quran', icon: 'book-outline', color: '#8B5E3C', bg: '#FFF0E0', route: '/Quran' },
-  { title: 'Doa Harian', icon: 'chatbubble-ellipses-outline', color: '#A07040', bg: '#FFF8E7', route: '/Doa_harian' },
-  { title: 'Dzikir', icon: 'heart-outline', color: '#C0392B', bg: '#FFF0EE', route: '/Dzikir' },
-  { title: 'Hadits', icon: 'library-outline', color: '#2E7D32', bg: '#F0FFF1', route: '/Hadits' },
-  { title: 'Arah Kiblat', icon: 'compass-outline', color: '#1565C0', bg: '#EEF4FF', route: '/Arah_kiblat' },
-  { title: 'Donasi', icon: 'gift-outline', color: '#6A1B9A', bg: '#F8F0FF' },
-  { title: 'Asmaul Husna', icon: 'sparkles-outline', color: '#E65100', bg: '#FFF3E0', route: '/Asmaul_husna' },
-  { title: 'Lainnya', icon: 'apps-outline', color: '#37474F', bg: '#F0F4F8', route: '/other' },
+const PRAYER_ICONS: React.ComponentProps<typeof MaterialCommunityIcons>['name'][] = [
+  'weather-sunset-up',
+  'white-balance-sunny',
+  'weather-partly-cloudy',
+  'weather-sunset-down',
+  'moon-waning-crescent',
 ];
 
-const COMMUNITY_DOA = [
-  {
-    title: 'Doa kesembuhan ibu',
-    summary: 'Mohon doanya untuk kesembuhan ibu saya.',
-    count: 48,
-  },
-  {
-    title: 'Diberi kelancaran ujian',
-    summary: 'Mohon doanya untuk ujian akhir pekan ini.',
-    count: 32,
-  },
-];
+const HADITS_HARIAN = {
+  text: 'Sesungguhnya setiap amalan tergantung pada niatnya, dan setiap orang akan mendapatkan sesuai dengan niatnya.',
+  source: 'HR. Bukhari & Muslim',
+};
 
-const Home = () => {
+const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+export default function Home() {
   const router = useRouter();
+  const { resolvedTheme } = useThemePreference();
+  const isDark = resolvedTheme === 'dark';
+  const now = useRealtimeClock();
+  const { prayers, activePrayerIndex, countdown, city, loading: prayerLoading } = usePrayerTimes();
+  const theme = useMemo(
+    () => ({
+      bg: isDark ? '#1A130B' : '#F7F1E8',
+      text: isDark ? '#F7EFE2' : COLORS.primaryDeeper,
+      muted: isDark ? '#CCB99E' : '#7E6446',
+      card: isDark ? '#2A1F12' : '#FFFDF5',
+      cardSoft: isDark ? '#312414' : '#FFF9ED',
+      border: isDark ? '#4A3825' : '#EDDFC4',
+      gold: '#C68B2F',
+      goldSoft: isDark ? 'rgba(198,139,47,0.22)' : 'rgba(198,139,47,0.12)',
+      prayerText: isDark ? '#F5E3C7' : '#6D4D2A',
+      bodyText: isDark ? '#E6D5BD' : '#5C3D1E',
+    }),
+    [isDark]
+  );
+
+  const pulseScale = useSharedValue(1);
+  useEffect(() => {
+    pulseScale.value = withRepeat(
+      withSequence(
+        withTiming(1.18, { duration: 800 }),
+        withTiming(1, { duration: 800 }),
+      ),
+      -1,
+    );
+  }, [pulseScale]);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulseScale.value }] }));
+
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const dateStr = `${now.getDate()} ${MONTHS_ID[now.getMonth()]}, ${now.getFullYear()}`;
+
+  const nextIdx = prayers.length > 0 ? (activePrayerIndex + 1) % prayers.length : 0;
+  const nextPrayer = prayers[nextIdx]?.name ?? 'Sholat berikutnya';
+
+  const prayerList =
+    prayerLoading || prayers.length === 0
+      ? [
+          { name: 'Subuh', time: '--:--' },
+          { name: 'Dzuhur', time: '--:--' },
+          { name: 'Ashar', time: '--:--' },
+          { name: 'Maghrib', time: '--:--' },
+          { name: 'Isya', time: '--:--' },
+        ]
+      : prayers;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top']}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Pressable>
-          <Ionicons name="menu-outline" size={24} color="#5C3D1E" />
+      <Animated.View entering={FadeIn.duration(320)} style={styles.topBar}>
+        <Pressable hitSlop={10} onPress={() => router.push('/setting')}>
+          <Ionicons name="person-circle-outline" size={26} color={theme.text} />
         </Pressable>
-        <Text style={styles.appName}>MUSLIM</Text>
-        <Pressable>
-          <Ionicons name="search-outline" size={22} color="#5C3D1E" />
+        <Text style={[styles.appName, { color: theme.text }]}>Al Ukhuwah</Text>
+        <Pressable hitSlop={10} onPress={() => Alert.alert('Info', 'Fitur Pencarian segera hadir')}>
+          <Ionicons name="search-outline" size={22} color={theme.text} />
         </Pressable>
-      </View>
+      </Animated.View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Animated.View entering={FadeInDown.duration(420).delay(40)} style={styles.hero}>
+          <Image
+            source={require('../../assets/images/bg_header.png')}
+            style={styles.heroBackdrop}
+            resizeMode="contain"
+          />
+          <Text style={styles.heroDate}>{dateStr}</Text>
+          <Text style={styles.heroClock}>
+            {hh}<Text style={styles.heroClockColon}>:</Text>{mm}
+          </Text>
+          <Text style={styles.heroMeta}>{prayerLoading ? 'Memuat jadwal...' : `${nextPrayer} dalam ${countdown}`}</Text>
+          <View style={styles.heroLocationRow}>
+            <Ionicons name="location-outline" size={14} color="#ffffff" />
+            <Text style={styles.heroLocation}>{city}</Text>
+          </View>
+        </Animated.View>
 
-        {/* Hero Card */}
-        <View style={styles.heroCard}>
-          {/* Glow circles */}
-          <View style={styles.glowCircle1} />
-          <View style={styles.glowCircle2} />
+        <Animated.View entering={FadeInDown.duration(420).delay(90)} style={styles.quickWrap}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Akses Cepat</Text>
+          <View style={styles.chipGrid}>
+            {QUICK_MENU.map((item) => (
+              <Pressable
+                key={item.title}
+                style={({ pressed }) => [
+                  styles.quickChip,
+                  { backgroundColor: theme.cardSoft, borderColor: theme.border },
+                  pressed && styles.quickChipPressed,
+                ]}
+                onPress={() => item.route && router.push(item.route as never)}
+              >
+                <View style={[styles.quickChipIcon, { backgroundColor: theme.goldSoft }]}>
+                  <MaterialCommunityIcons name={item.icon} size={18} color={theme.gold} />
+                </View>
+                <Text style={[styles.quickChipText, { color: theme.bodyText }]}>{item.title}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Animated.View>
 
-          {/* Moon crescent */}
-          <View style={styles.moonOuter}>
-            <View style={styles.moonInner} />
+        <Animated.View entering={FadeInDown.duration(420).delay(140)} style={[styles.block, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.blockHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Jadwal Sholat Hari Ini</Text>
+            <Text style={[styles.blockSub, { color: theme.muted }]}>{city}</Text>
           </View>
 
-          {/* Time */}
-          <Text style={styles.heroTime}>18<Text style={styles.heroColon}>:</Text>36</Text>
-
-          {/* Countdown info */}
-          <View style={styles.heroInfoRow}>
-            <View style={styles.heroInfoItem}>
-              <Text style={styles.heroInfoLabel}>REMAINING TIME</Text>
-              <Text style={styles.heroInfoValue}>Maghrib 05:33:10</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroInfoItem}>
-              <Text style={styles.heroInfoLabel}>LOCATION</Text>
-              <Text style={styles.heroInfoValue}>Bogor, Indonesia</Text>
-            </View>
-          </View>
-
-          {/* Mosque silhouette */}
-          <View style={styles.mosqueWrap}>
-            {/* Main dome */}
-            <View style={[styles.dome, { width: 70, height: 42, bottom: 22, alignSelf: 'center', zIndex: 3, left: 0 }]} />
-            {/* Side domes */}
-            <View style={[styles.dome, { width: 44, height: 28, bottom: 22, position: 'absolute', left: '15%', zIndex: 2 }]} />
-            <View style={[styles.dome, { width: 44, height: 28, bottom: 22, position: 'absolute', right: '15%', zIndex: 2 }]} />
-            {/* Side small domes */}
-            <View style={[styles.dome, { width: 30, height: 20, bottom: 22, position: 'absolute', left: '5%', zIndex: 1 }]} />
-            <View style={[styles.dome, { width: 30, height: 20, bottom: 22, position: 'absolute', right: '5%', zIndex: 1 }]} />
-            {/* Minarets */}
-            <View style={[styles.minaret, { left: '26%', height: 52 }]} />
-            <View style={[styles.minaret, { right: '26%', height: 52 }]} />
-            {/* Base wall */}
-            <View style={styles.mosqueBase} />
-          </View>
-        </View>
-
-        {/* Prayer Times */}
-        <View style={styles.prayerCard}>
-          <Text style={styles.prayerCardTitle}>Prayer Times</Text>
-          <View style={styles.prayerRow}>
-            {PRAYER_TIMES.map((item, index) => {
-              const isActive = item.name === 'Maghrib';
+          <View style={styles.prayerList}>
+            {prayerList.map((p, i) => {
+              const isActive = !prayerLoading && i === activePrayerIndex;
               return (
-                <View
-                  key={item.name}
-                  style={[styles.prayerItem, isActive && styles.prayerItemActive]}>
-                  <Ionicons
-                    name={item.icon}
-                    size={18}
-                    color={isActive ? '#FFF' : '#B08050'}
-                  />
-                  <Text style={[styles.prayerName, isActive && styles.prayerNameActive]}>
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.prayerTime, isActive && styles.prayerTimeActive]}>
-                    {item.time}
-                  </Text>
+                <View key={p.name} style={[styles.prayerRow, { backgroundColor: theme.cardSoft }, isActive && styles.prayerRowActive]}>
+                  <View style={styles.prayerLeft}>
+                    <View style={[styles.prayerIcon, { backgroundColor: theme.goldSoft }, isActive && styles.prayerIconActive]}>
+                      <MaterialCommunityIcons
+                        name={PRAYER_ICONS[i] ?? 'clock-outline'}
+                        size={16}
+                        color={isActive ? '#FFFFFF' : theme.gold}
+                      />
+                    </View>
+                    <Text style={[styles.prayerName, { color: theme.prayerText }, isActive && styles.prayerNameActive]}>{p.name}</Text>
+                  </View>
+
+                  <View style={styles.prayerRight}>
+                    {isActive ? <Animated.View style={[styles.liveDot, pulseStyle]} /> : null}
+                    <Text style={[styles.prayerTime, { color: theme.text }, isActive && styles.prayerTimeActive]}>{p.time}</Text>
+                  </View>
                 </View>
               );
             })}
           </View>
-        </View>
+        </Animated.View>
 
-        {/* Quick Menu */}
-        <View style={styles.quickMenuGrid}>
-          {QUICK_MENU.map((item) => (
-            <Pressable
-              key={item.title}
-              style={styles.quickMenuItem}
-              onPress={() => item.route && router.push(item.route as never)}>
-              <View style={[styles.quickIconBox, { backgroundColor: item.bg }]}>
-                <Ionicons name={item.icon} size={22} color={item.color} />
-              </View>
-              <Text style={styles.quickLabel}>{item.title}</Text>
+        <Animated.View entering={FadeInDown.duration(420).delay(190)} style={[styles.block, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Renungan Hari Ini</Text>
+          <Text style={[styles.haditsText, { color: theme.bodyText }]}>{`"${HADITS_HARIAN.text}"`}</Text>
+          <Text style={[styles.haditsSource, { color: theme.gold }]}>{HADITS_HARIAN.source}</Text>
+
+          <View style={[styles.ayatDivider, { backgroundColor: theme.border }]} />
+
+          <Text style={[styles.ayatArabic, { color: theme.text }]}>لَا يُكَلِّفُ اللَّهُ نَفْسًا إِلَّا وُسْعَهَا</Text>
+          <Text style={[styles.ayatSource, { color: theme.gold }]}>QS. Al-Baqarah : 286</Text>
+          <Text style={[styles.ayatTrans, { color: theme.bodyText }]}>
+            Allah tidak membebani seseorang melainkan sesuai dengan kesanggupannya.
+          </Text>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.duration(420).delay(230)} style={styles.doaSection}>
+          <View style={styles.blockHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Aminkan Doa Saudaramu</Text>
+            <Pressable hitSlop={10}>
+              <Text style={[styles.linkBtn, { color: theme.gold }]}>Buat Doa +</Text>
             </Pressable>
-          ))}
-        </View>
-
-        {/* Ramadan Banner */}
-        <View style={styles.ramadanBanner}>
-          <MaterialCommunityIcons name="moon-waning-crescent" size={28} color="#C8860A" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.bannerTitle}>Ramadhan Mubarak! 🌙</Text>
-            <Text style={styles.bannerSub}>Selamat menjalankan ibadah puasa</Text>
           </View>
-        </View>
 
-        {/* Community Doa */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Aminkan doa saudaramu</Text>
-          <Pressable>
-            <Text style={styles.sectionAction}>Buat doa +</Text>
-          </Pressable>
-        </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.doaScroll}>
+            {[
+              { title: 'Doa kesembuhan ibu', summary: 'Mohon doakan kesembuhan ibu saya.', count: 48 },
+              { title: 'Kelancaran ujian', summary: 'Mohon doanya untuk ujian akhir.', count: 32 },
+              { title: 'Rizki yang berkah', summary: 'Semoga dimudahkan rezeki halal.', count: 27 },
+            ].map((d) => (
+              <View key={d.title} style={[styles.doaCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={[styles.doaTitle, { color: theme.text }]}>{d.title}</Text>
+                <Text style={[styles.doaSummary, { color: theme.muted }]}>{d.summary}</Text>
+                <Pressable style={[styles.aminBtn, { backgroundColor: theme.goldSoft }]}>
+                  <Ionicons name="heart-outline" size={13} color={theme.gold} />
+                  <Text style={[styles.aminText, { color: theme.gold }]}>Aamiin · {d.count}</Text>
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.doaScroll}>
-          {COMMUNITY_DOA.map((item) => (
-            <View key={item.title} style={styles.doaCard}>
-              <Text style={styles.doaTitle}>{item.title}</Text>
-              <Text style={styles.doaSummary}>{item.summary}</Text>
-              <Pressable style={styles.aminBtn}>
-                <Ionicons name="heart-outline" size={14} color="#C0622A" />
-                <Text style={styles.aminText}>Aamiin • {item.count}</Text>
-              </Pressable>
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={{ height: 10 }} />
+        <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
   );
-};
-
-const CARD_PAD = 16;
+}
 
 const styles = StyleSheet.create({
-  safeArea: {
+  root: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#F7F1E8',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: '#F5EDD8',
+    paddingVertical: 12,
   },
   appName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#3D2410',
-    letterSpacing: 2,
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.primaryDeeper,
+    letterSpacing: 0.5,
+    fontFamily: 'serif',
   },
-  content: {
+  scroll: {
     paddingHorizontal: 16,
     paddingBottom: 24,
     gap: 14,
   },
-
-  /* ── HERO ── */
-  heroCard: {
-    backgroundColor: '#F0C97A',
+  hero: {
+    backgroundColor: '#D99A3E',
     borderRadius: 24,
-    height: 230,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: CARD_PAD,
+    minHeight: 190,
   },
-  glowCircle1: {
+  heroBackdrop: {
     position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    top: -70,
-    right: -60,
+    right: -10,
+    bottom: -8,
+    width: 210,
+    height: 124,
+    opacity: 0.2,
   },
-  glowCircle2: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(230,160,40,0.35)',
-    bottom: -100,
-    left: -60,
+  heroDate: {
+    fontSize: 12,
+    color: '#af6923',
+    letterSpacing: 0.4,
+    fontWeight: '700',
   },
-  moonOuter: {
-    position: 'absolute',
-    top: 16,
-    right: 24,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#E8B050',
-    overflow: 'hidden',
-  },
-  moonInner: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#F0C97A',
-    top: 2,
-    left: 8,
-  },
-  heroTime: {
-    fontSize: 72,
-    fontWeight: '800',
-    color: '#5C3210',
-    lineHeight: 80,
-    letterSpacing: -2,
+  heroClock: {
+    fontSize: 68,
+    lineHeight: 76,
+    marginTop: 4,
+    color: '#FFF',
+    fontWeight: '900',
     fontFamily: 'serif',
-    zIndex: 2,
+    letterSpacing: -2,
   },
-  heroColon: {
-    color: '#C8860A',
+  heroClockColon: {
+    color: '#af6923',
   },
-  heroInfoRow: {
+  heroMeta: {
+    marginTop: 6,
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '700',
+  },
+  heroLocationRow: {
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginTop: 4,
-    zIndex: 2,
+    gap: 4,
   },
-  heroInfoItem: {
-    alignItems: 'center',
-  },
-  heroInfoLabel: {
-    fontSize: 9,
-    color: '#8B5E2A',
-    letterSpacing: 1,
-    fontWeight: '600',
-  },
-  heroInfoValue: {
-    fontSize: 13,
-    color: '#4A2E0E',
+  heroLocation: {
+    fontSize: 12,
+    color: '#FFF',
     fontWeight: '700',
-    marginTop: 2,
   },
-  heroDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(100,60,20,0.2)',
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.primaryDeeper,
+    fontFamily: 'serif',
   },
-
-  /* Mosque silhouette */
-  mosqueWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 68,
+  quickWrap: {
+    paddingVertical: 4,
+    gap: 12,
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickChip: {
+    width: '48.5%',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    borderRadius: 18,
+    backgroundColor: '#FFF9ED',
+    borderWidth: 1,
+    borderColor: '#EDDFC4',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 9,
   },
-  dome: {
-    borderTopLeftRadius: 999,
-    borderTopRightRadius: 999,
-    backgroundColor: 'rgba(60,30,8,0.45)',
-    position: 'absolute',
+  quickChipPressed: {
+    opacity: 0.72,
   },
-  minaret: {
-    position: 'absolute',
-    bottom: 0,
-    width: 10,
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 5,
-    backgroundColor: 'rgba(60,30,8,0.45)',
+  quickChipIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ICON_BG,
   },
-  mosqueBase: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 22,
-    backgroundColor: 'rgba(60,30,8,0.45)',
+  quickChipText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.primaryDeep,
+    fontWeight: '700',
   },
-
-  /* ── PRAYER TIMES ── */
-  prayerCard: {
+  block: {
     backgroundColor: '#FFFDF5',
     borderRadius: 20,
-    padding: CARD_PAD,
     borderWidth: 1,
-    borderColor: '#E8D8B8',
+    borderColor: '#EDDFC4',
+    padding: 16,
+    gap: 12,
   },
-  prayerCardTitle: {
-    fontSize: 14,
+  blockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  blockSub: {
+    fontSize: 11,
+    color: '#7E6446',
     fontWeight: '700',
-    color: '#3D2410',
-    marginBottom: 12,
+  },
+  prayerList: {
+    gap: 8,
   },
   prayerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  prayerItem: {
-    flex: 1,
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 10,
+    paddingHorizontal: 10,
     borderRadius: 14,
-    gap: 4,
     backgroundColor: '#FFF8EB',
   },
-  prayerItemActive: {
-    backgroundColor: '#D4873A',
+  prayerRowActive: {
+    backgroundColor: '#C68B2F',
+  },
+  prayerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  prayerIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: ICON_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prayerIconActive: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   prayerName: {
-    fontSize: 10,
-    color: '#8B6540',
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6D4D2A',
   },
   prayerNameActive: {
     color: '#FFF',
   },
+  prayerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFF',
+  },
   prayerTime: {
-    fontSize: 12,
-    color: '#3D2410',
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#3D2108',
   },
   prayerTimeActive: {
     color: '#FFF',
   },
-
-  /* ── QUICK MENU ── */
-  quickMenuGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: '#FFFDF5',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E8D8B8',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    rowGap: 16,
-  },
-  quickMenuItem: {
-    width: '25%',
-    alignItems: 'center',
-    gap: 6,
-  },
-  quickIconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickLabel: {
-    fontSize: 11,
+  haditsText: {
+    fontSize: 14,
     color: '#5C3D1E',
-    textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 22,
+    fontStyle: 'italic',
   },
-
-  /* ── RAMADAN BANNER ── */
-  ramadanBanner: {
-    backgroundColor: '#FFF3DC',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#EAD4A0',
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
+  haditsSource: {
+    fontSize: 12,
+    color: ICON_COLOR,
+    fontWeight: '700',
+  },
+  ayatDivider: {
+    height: 1,
+    backgroundColor: '#F0E3CB',
+    marginVertical: 2,
+  },
+  ayatArabic: {
+    fontSize: 22,
+    textAlign: 'right',
+    color: '#1C1408',
+    fontFamily: 'serif',
+    lineHeight: 36,
+  },
+  ayatSource: {
+    fontSize: 12,
+    color: ICON_COLOR,
+    fontWeight: '700',
+  },
+  ayatTrans: {
+    fontSize: 14,
+    color: '#5C3D1E',
+    lineHeight: 22,
+  },
+  doaSection: {
     gap: 12,
   },
-  bannerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#5C3210',
-  },
-  bannerSub: {
-    fontSize: 12,
-    color: '#906A3A',
-    marginTop: 2,
-  },
-
-  /* ── COMMUNITY DOA ── */
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3D2410',
-  },
-  sectionAction: {
+  linkBtn: {
     fontSize: 13,
-    color: '#C07828',
-    fontWeight: '600',
+    color: ICON_COLOR,
+    fontWeight: '700',
   },
   doaScroll: {
     gap: 12,
-    paddingBottom: 4,
   },
   doaCard: {
-    width: 200,
+    width: 190,
     backgroundColor: '#FFFDF5',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E8D8B8',
+    borderRadius: 18,
     padding: 14,
+    borderWidth: 1,
+    borderColor: '#EDDFC4',
     gap: 8,
   },
   doaTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#3D2410',
+    color: COLORS.primaryDeeper,
   },
   doaSummary: {
     fontSize: 12,
@@ -491,8 +505,8 @@ const styles = StyleSheet.create({
   aminBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFF0E4',
+    gap: 5,
+    backgroundColor: ICON_BG,
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 20,
@@ -500,9 +514,7 @@ const styles = StyleSheet.create({
   },
   aminText: {
     fontSize: 12,
-    color: '#C0622A',
-    fontWeight: '600',
+    color: ICON_COLOR,
+    fontWeight: '700',
   },
 });
-
-export default Home;
