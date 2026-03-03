@@ -27,10 +27,6 @@ Berikut visual yang diambil dari aset gambar yang ada di project ini:
   <img src="assets/images/bg_detail_surat.png" alt="Detail Surat" width="85%" />
 </p>
 
-<p align="center">
-  <img src="assets/images/splash-icon.png" alt="Splash" width="180" />
-</p>
-
 ## Fitur Utama
 - Home dashboard islami (jadwal sholat, countdown, quick access, renungan).
 - Al-Quran list surat + detail surat.
