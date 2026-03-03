@@ -16,15 +16,8 @@ Project ini dibangun untuk pengalaman yang:
 - ringan dipakai harian,
 - dan mudah dikembangkan lagi per modul.
 
-## Galeri Tampilan
-Berikut visual yang diambil dari aset gambar yang ada di project ini:
-
 <p align="center">
-  <img src="assets/images/bg_header.png" alt="Header Quran" width="85%" />
-</p>
-
-<p align="center">
-  <img src="assets/images/bg_detail_surat.png" alt="Detail Surat" width="85%" />
+  <img src="assets/images/bg_detail_surat.png" alt="Detail Surat" width="100%" />
 </p>
 
 ## Fitur Utama
@@ -135,3 +128,8 @@ Kalau mau nambah modul baru, disarankan pakai pola yang sama:
 Semoga aplikasi ini bermanfaat dan jadi amal jariyah.
 
 > "Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya."
+
+
+<p align="center">
+  <img src="assets/images/bg_header.png" alt="Header Quran" width="85%" />
+</p>
