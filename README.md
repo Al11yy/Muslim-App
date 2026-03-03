@@ -34,19 +34,6 @@ Project ini dibangun untuk pengalaman yang:
 - AI Muslim chat screen (UI + flow chat).
 - Dark mode / Light mode.
 
-## Fitur Detail Quran (Baru)
-Di halaman **Detail Surat**, sekarang sudah ada:
-- Tombol **Settings** khusus detail Quran.
-- Pilih **reciter sebelum play** (tanpa harus mulai audio dulu).
-- Toggle tampilkan/sembunyikan terjemahan.
-- Toggle auto-scroll ke ayat yang sedang diputar.
-- Toggle getar (haptic) saat swipe pindah surat.
-- Atur ukuran teks Arab.
-- Atur ukuran teks terjemahan.
-- Pengaturan loop (`Off`, `Loop Ayat`, `Loop Surat`).
-- Tombol **reset ke default**.
-- Tombol **scroll ke atas** (back to top) saat user sudah scroll jauh.
-
 ## Struktur Menu (Ringkas)
 - Tab utama:
   - `Home`
@@ -103,13 +90,6 @@ npm run android
 npm run ios
 npm run web
 ```
-
-## Script NPM
-- `npm run start` - Menjalankan Expo dev server.
-- `npm run android` - Build/run ke Android.
-- `npm run ios` - Build/run ke iOS.
-- `npm run web` - Menjalankan versi web.
-- `npm run lint` - Linting project.
 
 ## Catatan Pengembangan
 - Theme sudah mendukung light/dark di layar utama (termasuk tab bar dan detail Quran).
