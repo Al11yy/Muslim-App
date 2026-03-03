@@ -1,50 +1,141 @@
-# Welcome to your Expo app 👋
+# Al Ukhuwah - Muslim App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+<p align="center">
+  <img src="assets/images/logo-AlUkhuwah-noBg.png" alt="Logo Al Ukhuwah" width="180" />
+</p>
 
-## Get started
+<p align="center">
+  <strong>Bismillah. Aplikasi Muslim modern untuk bantu ibadah harian dengan tampilan hangat dan fokus ke kenyamanan pengguna.</strong>
+</p>
 
-1. Install dependencies
+## Tentang Project
+Al Ukhuwah adalah aplikasi mobile berbasis **React Native + Expo** yang menyediakan fitur-fitur islami utama seperti Al-Quran, detail ayat dengan audio, doa harian, dzikir, hadits, artikel islam, arah kiblat, serta AI Muslim chat.
 
-   ```bash
-   npm install
-   ```
+Project ini dibangun untuk pengalaman yang:
+- rapi secara UI/UX,
+- ringan dipakai harian,
+- dan mudah dikembangkan lagi per modul.
 
-2. Start the app
+## Galeri Tampilan
+Berikut visual yang diambil dari aset gambar yang ada di project ini:
 
-   ```bash
-   npx expo start
-   ```
+<p align="center">
+  <img src="assets/images/bg_header.png" alt="Header Quran" width="85%" />
+</p>
 
-In the output, you'll find options to open the app in a
+<p align="center">
+  <img src="assets/images/bg_detail_surat.png" alt="Detail Surat" width="85%" />
+</p>
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+<p align="center">
+  <img src="assets/images/splash-icon.png" alt="Splash" width="180" />
+</p>
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Fitur Utama
+- Home dashboard islami (jadwal sholat, countdown, quick access, renungan).
+- Al-Quran list surat + detail surat.
+- Audio ayat per-reciter dengan kontrol play/pause/next/prev.
+- Bookmark surat dan bookmark ayat.
+- Doa harian + halaman detail doa.
+- Dzikir harian dengan mode baca expand/collapse.
+- Hadits dengan tampilan interaktif expand/collapse.
+- Asmaul Husna.
+- Arah Kiblat.
+- Artikel islam dari feed eksternal.
+- AI Muslim chat screen (UI + flow chat).
+- Dark mode / Light mode.
 
-## Get a fresh project
+## Fitur Detail Quran (Baru)
+Di halaman **Detail Surat**, sekarang sudah ada:
+- Tombol **Settings** khusus detail Quran.
+- Pilih **reciter sebelum play** (tanpa harus mulai audio dulu).
+- Toggle tampilkan/sembunyikan terjemahan.
+- Toggle auto-scroll ke ayat yang sedang diputar.
+- Toggle getar (haptic) saat swipe pindah surat.
+- Atur ukuran teks Arab.
+- Atur ukuran teks terjemahan.
+- Pengaturan loop (`Off`, `Loop Ayat`, `Loop Surat`).
+- Tombol **reset ke default**.
+- Tombol **scroll ke atas** (back to top) saat user sudah scroll jauh.
 
-When you're ready, run:
+## Struktur Menu (Ringkas)
+- Tab utama:
+  - `Home`
+  - `Quran`
+  - `AI Chat`
+  - `Artikel`
+  - `Settings`
+- Halaman tambahan:
+  - `Doa_harian`
+  - `Dzikir`
+  - `Hadits`
+  - `Asmaul_husna`
+  - `Arah_kiblat`
+  - `Detail_surat`
+  - `Detail_doa`
+  - `Detail_dzikir`
+  - `Detail_hadits`
 
+## Tech Stack
+- Expo SDK 54
+- React Native 0.81
+- React 19
+- Expo Router (file-based routing)
+- React Navigation Bottom Tabs
+- Reanimated + Gesture Handler
+- Expo AV (audio)
+- Expo Haptics
+- Async Storage
+
+## Sumber Data API
+Beberapa endpoint yang dipakai app:
+- Quran list surat: `https://quran-api.santrikoding.com/api/surah`
+- Quran detail surat: `https://quran-api.santrikoding.com/api/surah/{nomor}`
+- Audio ayat per reciter: `https://quranapi.pages.dev/api/audio/{surah}/{ayah}.json`
+- Jadwal sholat (default city Jakarta): `https://api.aladhan.com/v1/timingsByCity`
+- Hadits: `https://muslim-api-three.vercel.app/v1/hadits`
+- Dzikir: `https://muslim-api-three.vercel.app/v1/dzikir`
+- Artikel islam: feed Republika via RSS2JSON
+
+## Cara Menjalankan
+### 1. Install dependency
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Jalankan project
+```bash
+npx expo start
+```
 
-## Learn more
+### 3. Jalankan target platform
+```bash
+npm run android
+npm run ios
+npm run web
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Script NPM
+- `npm run start` - Menjalankan Expo dev server.
+- `npm run android` - Build/run ke Android.
+- `npm run ios` - Build/run ke iOS.
+- `npm run web` - Menjalankan versi web.
+- `npm run lint` - Linting project.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Catatan Pengembangan
+- Theme sudah mendukung light/dark di layar utama (termasuk tab bar dan detail Quran).
+- Beberapa modul API memakai fallback agar tetap aman saat request gagal.
+- Untuk pengalaman terbaik, gunakan device/emulator dengan permission internet aktif.
 
-## Join the community
+## Kontribusi
+Masukan, issue, dan pull request sangat terbuka.
 
-Join our community of developers creating universal apps.
+Kalau mau nambah modul baru, disarankan pakai pola yang sama:
+- file route di folder `app/`,
+- state + theme konsisten,
+- dan reusable UI pattern antar halaman.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Penutup
+Semoga aplikasi ini bermanfaat dan jadi amal jariyah.
+
+> "Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya."
