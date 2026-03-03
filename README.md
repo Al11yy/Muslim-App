@@ -131,5 +131,5 @@ Semoga aplikasi ini bermanfaat dan jadi amal jariyah.
 
 
 <p align="center">
-  <img src="assets/images/bg_header.png" alt="Header Quran" width="85%" />
+  <img src="assets/images/bg_header.png" alt="Header Quran" width="100%" />
 </p>
