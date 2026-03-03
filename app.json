@@ -4,7 +4,7 @@
     "slug": "Al-Ukhuwah",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo-AlUkhuwah-noBg.png",
+    "icon": "./assets/images/logo-AlUkhuwah-noBg-color.png",
     "scheme": "muslimapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -56,16 +56,16 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/logo-AlUkhuwah-noBg.png"
+      "favicon": "./assets/images/logo-AlUkhuwah-noBg-color.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo-AlUkhuwah-noBg.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
+          "image": "./assets/images/logo-AlUkhuwah-noBg-color.png",
+          "imageWidth": 500,
+          "resizeMode": "fit",
           "backgroundColor": "#ffffff",
           "dark": {
             "backgroundColor": "#000000"

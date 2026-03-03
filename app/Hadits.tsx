@@ -1,4 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,6 +7,7 @@ import {
   LayoutAnimation,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +17,8 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemePreference } from '@/contexts/theme-preference';
+import { getHaditsSavedIds, toggleHaditsSavedId } from '@/lib/content-bookmarks';
+import { showSaveFeedback } from '@/lib/save-feedback';
 
 type HadithApiItem = {
   no?: number | string;
@@ -31,6 +35,7 @@ type HadithItem = {
 };
 
 export default function Hadits() {
+  const router = useRouter();
   const { resolvedTheme } = useThemePreference();
   const isDark = resolvedTheme === 'dark';
 
@@ -38,6 +43,8 @@ export default function Hadits() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [savedIds, setSavedIds] = useState<Record<string, boolean>>({});
+  const [activeFilter, setActiveFilter] = useState<'all' | 'saved' | 'short' | 'long'>('all');
 
   const theme = useMemo(
     () => ({
@@ -65,7 +72,10 @@ export default function Hadits() {
 
     const loadHadits = async () => {
       try {
-        const response = await fetch('https://muslim-api-three.vercel.app/v1/hadits');
+        const [response, saved] = await Promise.all([
+          fetch('https://muslim-api-three.vercel.app/v1/hadits'),
+          getHaditsSavedIds(),
+        ]);
         const result = await response.json();
         const rawList: HadithApiItem[] = Array.isArray(result)
           ? result
@@ -82,6 +92,12 @@ export default function Hadits() {
 
         if (!mounted) return;
         setData(normalized);
+        setSavedIds(
+          saved.reduce<Record<string, boolean>>((acc, id) => {
+            acc[id] = true;
+            return acc;
+          }, {})
+        );
       } catch (error) {
         console.error(error);
         if (mounted) setData([]);
@@ -99,19 +115,47 @@ export default function Hadits() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return data;
 
-    return data.filter(
-      (item) =>
+    return data.filter((item) => {
+      const matchQuery =
+        !q ||
         item.title.toLowerCase().includes(q) ||
         item.translation.toLowerCase().includes(q) ||
-        item.arabic.toLowerCase().includes(q)
-    );
-  }, [data, query]);
+        item.arabic.toLowerCase().includes(q);
+
+      const translationLength = item.translation.length;
+      const matchFilter =
+        activeFilter === 'all'
+          ? true
+          : activeFilter === 'saved'
+            ? Boolean(savedIds[item.id])
+            : activeFilter === 'short'
+              ? translationLength <= 220
+              : translationLength > 220;
+
+      return matchQuery && matchFilter;
+    });
+  }, [data, query, activeFilter, savedIds]);
 
   const toggleExpand = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleSave = async (id: string) => {
+    const result = await toggleHaditsSavedId(id);
+    setSavedIds(
+      result.ids.reduce<Record<string, boolean>>((acc, itemId) => {
+        acc[itemId] = true;
+        return acc;
+      }, {})
+    );
+    const selected = data.find((item) => item.id === id);
+    showSaveFeedback({
+      saved: result.saved,
+      label: selected?.title ?? `Hadits #${id}`,
+      entity: 'Hadits',
+    });
   };
 
   if (loading) {
@@ -125,9 +169,16 @@ export default function Hadits() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+      <View style={styles.topBarWrap}>
+        <Pressable hitSlop={10} onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+        </Pressable>
+        <Text style={[styles.topBarTitle, { color: theme.text }]}>Hadits</Text>
+        <View style={styles.topBarSpacer} />
+      </View>
+
       <View style={styles.headerWrap}>
-        <Text style={[styles.pageTitle, { color: theme.text }]}>Hadits</Text>
-        <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Tap kartu untuk buka teks lengkap dengan animasi halus.</Text>
+        <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Filter hadits lalu simpan yang ingin kamu baca ulang.</Text>
 
         <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
           <Ionicons name="search-outline" size={18} color={theme.muted} />
@@ -139,6 +190,21 @@ export default function Hadits() {
             style={[styles.searchInput, { color: theme.text }]}
           />
         </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          <Pressable style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]} onPress={() => setActiveFilter('all')}>
+            <Text style={[styles.filterChipText, activeFilter === 'all' && styles.filterChipTextActive]}>Semua</Text>
+          </Pressable>
+          <Pressable style={[styles.filterChip, activeFilter === 'saved' && styles.filterChipActive]} onPress={() => setActiveFilter('saved')}>
+            <Text style={[styles.filterChipText, activeFilter === 'saved' && styles.filterChipTextActive]}>Tersimpan</Text>
+          </Pressable>
+          <Pressable style={[styles.filterChip, activeFilter === 'short' && styles.filterChipActive]} onPress={() => setActiveFilter('short')}>
+            <Text style={[styles.filterChipText, activeFilter === 'short' && styles.filterChipTextActive]}>Ringkas</Text>
+          </Pressable>
+          <Pressable style={[styles.filterChip, activeFilter === 'long' && styles.filterChipActive]} onPress={() => setActiveFilter('long')}>
+            <Text style={[styles.filterChipText, activeFilter === 'long' && styles.filterChipTextActive]}>Panjang</Text>
+          </Pressable>
+        </ScrollView>
       </View>
 
       <FlatList
@@ -166,7 +232,21 @@ export default function Hadits() {
                     <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
                     <Text style={[styles.cardSubtitle, { color: theme.subtitle }]}>Hadits #{item.id}</Text>
                   </View>
-                  <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.subtitle} />
+                  <View style={styles.headerActions}>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void toggleSave(item.id);
+                      }}>
+                      <Ionicons
+                        name={savedIds[item.id] ? 'bookmark' : 'bookmark-outline'}
+                        size={18}
+                        color={savedIds[item.id] ? theme.gold : theme.subtitle}
+                      />
+                    </Pressable>
+                    <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.subtitle} />
+                  </View>
                 </View>
 
                 <Text style={[styles.arabic, { color: theme.text }]} numberOfLines={isExpanded ? undefined : 2}>
@@ -207,17 +287,38 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     paddingTop: 8,
   },
-  headerWrap: {
+  topBarWrap: {
+    minHeight: 50,
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 14,
-    gap: 10,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  pageTitle: {
-    fontSize: 30,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    fontSize: 18,
     fontWeight: '800',
     color: '#1C1408',
     fontFamily: 'serif',
+  },
+  topBarSpacer: {
+    width: 38,
+    height: 38,
+  },
+  headerWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 14,
+    gap: 10,
   },
   pageSubtitle: {
     fontSize: 13,
@@ -241,6 +342,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#3D2108',
   },
+  filterRow: {
+    gap: 8,
+  },
+  filterChip: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5D5BA',
+    backgroundColor: '#FFF9ED',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  filterChipActive: {
+    backgroundColor: '#C68B2F',
+    borderColor: '#C68B2F',
+  },
+  filterChipText: {
+    color: '#7E6446',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterChipTextActive: {
+    color: '#FFF',
+  },
   card: {
     backgroundColor: '#FFFDF5',
     borderWidth: 1,
@@ -257,6 +381,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   iconWrap: {
     width: 36,

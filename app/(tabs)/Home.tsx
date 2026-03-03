@@ -23,27 +23,14 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS } from '@/constants/colors';
+import { HOME_QUICK_MENU } from '@/constants/feature-menu';
 import { useThemePreference } from '@/contexts/theme-preference';
 import { usePrayerTimes } from '@/hooks/usePrayerTimes';
 import { useRealtimeClock } from '@/hooks/useRealtimeClock';
+import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 
 const ICON_COLOR = '#C68B2F';
 const ICON_BG = 'rgba(198,139,47,0.12)';
-
-type MenuItem = {
-  title: string;
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  route?: string;
-};
-
-const QUICK_MENU: MenuItem[] = [
-  { title: 'Al-Quran', icon: 'book-open-page-variant', route: '/Quran' },
-  { title: 'Doa Harian', icon: 'hands-pray', route: '/Doa_harian' },
-  { title: 'Dzikir', icon: 'heart-outline', route: '/Dzikir' },
-  { title: 'Hadits', icon: 'script-text-outline', route: '/Hadits' },
-  { title: 'Arah Kiblat', icon: 'compass-outline', route: '/Arah_kiblat' },
-  { title: 'Asmaul Husna', icon: 'star-crescent', route: '/Asmaul_husna' },
-];
 
 const PRAYER_ICONS: React.ComponentProps<typeof MaterialCommunityIcons>['name'][] = [
   'weather-sunset-up',
@@ -126,7 +113,12 @@ export default function Home() {
         </Pressable>
       </Animated.View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        onScroll={notifyTabBarScroll}
+        onScrollBeginDrag={notifyTabBarScroll}
+        scrollEventThrottle={16}>
         <Animated.View entering={FadeInDown.duration(420).delay(40)} style={styles.hero}>
           <Image
             source={require('../../assets/images/bg_header.png')}
@@ -147,15 +139,15 @@ export default function Home() {
         <Animated.View entering={FadeInDown.duration(420).delay(90)} style={styles.quickWrap}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Akses Cepat</Text>
           <View style={styles.chipGrid}>
-            {QUICK_MENU.map((item) => (
+            {HOME_QUICK_MENU.map((item) => (
               <Pressable
-                key={item.title}
+                key={item.id}
                 style={({ pressed }) => [
                   styles.quickChip,
                   { backgroundColor: theme.cardSoft, borderColor: theme.border },
                   pressed && styles.quickChipPressed,
                 ]}
-                onPress={() => item.route && router.push(item.route as never)}
+                onPress={() => router.push(item.route as never)}
               >
                 <View style={[styles.quickChipIcon, { backgroundColor: theme.goldSoft }]}>
                   <MaterialCommunityIcons name={item.icon} size={18} color={theme.gold} />

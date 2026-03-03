@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { Camera } from 'expo-camera'; // Kita pakai ini sekarang!
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import { useThemePreference } from '@/contexts/theme-preference';
 
 const QIBLA_URL = 'https://qiblafinder.withgoogle.com/';
 
@@ -85,12 +86,33 @@ async function requestWebViewPermissions(): Promise<{ granted: boolean; message?
 // ─── KOMPONEN UTAMA ───
 export default function ArahKiblat() {
   const router = useRouter();
+  const { resolvedTheme } = useThemePreference();
+  const isDark = resolvedTheme === 'dark';
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [permissionState, setPermissionState] = useState<PermissionState>('checking');
   const [permissionMessage, setPermissionMessage] = useState('');
   const [webHint, setWebHint] = useState('');
+
+  const theme = useMemo(
+    () => ({
+      bg: isDark ? '#1A130B' : '#F7F1E8',
+      text: isDark ? '#F6ECDD' : '#2A1F12',
+      muted: isDark ? '#CAB79C' : '#8A7255',
+      surface: isDark ? '#2A1F12' : '#FFFDF5',
+      softSurface: isDark ? '#332516' : '#FFF9ED',
+      border: isDark ? '#4A3825' : '#E7D6B9',
+      gold: '#C68B2F',
+      overlay: isDark ? 'rgba(25, 18, 10, 0.95)' : 'rgba(255,253,245,0.95)',
+      overlayError: isDark ? 'rgba(25, 18, 10, 0.98)' : 'rgba(255,249,237,0.98)',
+      webBg: isDark ? '#24190F' : '#FFFDF5',
+      secondaryText: isDark ? '#D8C4A6' : '#8A5B28',
+      hintText: isDark ? '#DDBB84' : '#7B5A2B',
+      hintBg: isDark ? '#2C2013' : '#FFF9ED',
+    }),
+    [isDark]
+  );
 
   const ensurePermissions = useCallback(async () => {
     setPermissionState('checking');
@@ -121,13 +143,13 @@ export default function ArahKiblat() {
   }, [ensurePermissions]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.iconBtn}>
-          <Ionicons name="chevron-back" size={20} color="#2A1F12" />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+      <View style={[styles.topBar, { backgroundColor: theme.bg }]}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={[styles.iconBtn, { backgroundColor: theme.softSurface, borderColor: theme.border }]}>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
         </Pressable>
 
-        <Text style={styles.topTitle}>Arah Kiblat</Text>
+        <Text style={[styles.topTitle, { color: theme.text }]}>Arah Kiblat</Text>
 
         <Pressable
           onPress={() => {
@@ -141,17 +163,17 @@ export default function ArahKiblat() {
             webRef.current?.reload();
           }}
           hitSlop={10}
-          style={styles.iconBtn}>
-          <Ionicons name="refresh-outline" size={18} color="#2A1F12" />
+          style={[styles.iconBtn, { backgroundColor: theme.softSurface, borderColor: theme.border }]}>
+          <Ionicons name="refresh-outline" size={18} color={theme.text} />
         </Pressable>
       </View>
 
-      <View style={styles.webWrap}>
+      <View style={[styles.webWrap, { borderColor: theme.border, backgroundColor: theme.surface }]}>
         {permissionState === 'granted' ? (
           <WebView
             ref={webRef}
             source={{ uri: QIBLA_URL }}
-            style={styles.webview}
+            style={[styles.webview, { backgroundColor: theme.webBg }]}
             originWhitelist={['*']}
             userAgent={MOBILE_USER_AGENT}
             javaScriptEnabled={true}
@@ -183,55 +205,55 @@ export default function ArahKiblat() {
             }}
             startInLoadingState
             renderLoading={() => (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#C68B2F" />
-                <Text style={styles.loadingText}>Memuat Qibla Finder...</Text>
+              <View style={[styles.loadingOverlay, { backgroundColor: theme.overlay }]}>
+                <ActivityIndicator size="large" color={theme.gold} />
+                <Text style={[styles.loadingText, { color: theme.muted }]}>Memuat Qibla Finder...</Text>
               </View>
             )}
           />
         ) : null}
 
         {loading ? (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#C68B2F" />
-            <Text style={styles.loadingText}>
+          <View style={[styles.loadingOverlay, { backgroundColor: theme.overlay }]}>
+            <ActivityIndicator size="large" color={theme.gold} />
+            <Text style={[styles.loadingText, { color: theme.muted }]}>
               {permissionState === 'checking' ? 'Memeriksa izin kamera & lokasi...' : 'Memuat Qibla Finder...'}
             </Text>
           </View>
         ) : null}
 
         {permissionState === 'denied' ? (
-          <View style={styles.errorOverlay}>
-            <Ionicons name="lock-closed-outline" size={28} color="#8A5B28" />
-            <Text style={styles.errorTitle}>Izin Belum Aktif</Text>
-            <Text style={styles.errorDesc}>{permissionMessage}</Text>
+          <View style={[styles.errorOverlay, { backgroundColor: theme.overlayError }]}>
+            <Ionicons name="lock-closed-outline" size={28} color={theme.secondaryText} />
+            <Text style={[styles.errorTitle, { color: theme.text }]}>Izin Belum Aktif</Text>
+            <Text style={[styles.errorDesc, { color: theme.muted }]}>{permissionMessage}</Text>
             <View style={styles.rowAction}>
-              <Pressable style={styles.retryBtn} onPress={() => void ensurePermissions()}>
+              <Pressable style={[styles.retryBtn, { backgroundColor: theme.gold }]} onPress={() => void ensurePermissions()}>
                 <Text style={styles.retryText}>Minta Izin</Text>
               </Pressable>
               <Pressable
-                style={[styles.retryBtn, styles.secondaryBtn]}
+                style={[styles.retryBtn, styles.secondaryBtn, { backgroundColor: theme.softSurface, borderColor: theme.border }]}
                 onPress={() => void Linking.openSettings()}>
-                <Text style={[styles.retryText, styles.secondaryText]}>Pengaturan</Text>
+                <Text style={[styles.retryText, styles.secondaryText, { color: theme.secondaryText }]}>Pengaturan</Text>
               </Pressable>
             </View>
           </View>
         ) : null}
 
         {webHint ? (
-          <View style={styles.hintBox}>
-            <Ionicons name="information-circle-outline" size={16} color="#7B5A2B" />
-            <Text style={styles.hintText}>{webHint}</Text>
+          <View style={[styles.hintBox, { borderColor: theme.border, backgroundColor: theme.hintBg }]}>
+            <Ionicons name="information-circle-outline" size={16} color={theme.hintText} />
+            <Text style={[styles.hintText, { color: theme.hintText }]}>{webHint}</Text>
           </View>
         ) : null}
 
         {failed ? (
-          <View style={styles.errorOverlay}>
-            <Ionicons name="warning-outline" size={28} color="#8A5B28" />
-            <Text style={styles.errorTitle}>Koneksi Terputus</Text>
-            <Text style={styles.errorDesc}>Gagal memuat halaman, pastikan internet aktif.</Text>
+          <View style={[styles.errorOverlay, { backgroundColor: theme.overlayError }]}>
+            <Ionicons name="warning-outline" size={28} color={theme.secondaryText} />
+            <Text style={[styles.errorTitle, { color: theme.text }]}>Koneksi Terputus</Text>
+            <Text style={[styles.errorDesc, { color: theme.muted }]}>Gagal memuat halaman, pastikan internet aktif.</Text>
             <Pressable
-              style={styles.retryBtn}
+              style={[styles.retryBtn, { backgroundColor: theme.gold }]}
               onPress={() => {
                 setFailed(false);
                 setLoading(true);

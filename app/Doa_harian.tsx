@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useThemePreference } from '@/contexts/theme-preference';
 
 interface Doa {
   id: number;
@@ -22,9 +23,28 @@ interface Doa {
 
 export default function DoaHarian() {
   const router = useRouter(); 
+  const { resolvedTheme } = useThemePreference();
+  const isDark = resolvedTheme === 'dark';
   const [data, setData] = useState<Doa[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+
+  const theme = useMemo(
+    () => ({
+      bg: isDark ? '#1A130B' : '#F7F1E8',
+      text: isDark ? '#F6ECDD' : '#1C1408',
+      muted: isDark ? '#CAB79C' : '#7E6446',
+      body: isDark ? '#E9D8BF' : '#3D2108',
+      surface: isDark ? '#2A1F12' : '#FFFDF5',
+      softSurface: isDark ? '#332516' : '#FFF9ED',
+      border: isDark ? '#4A3825' : '#EADBC0',
+      gold: '#C68B2F',
+      pressed: isDark ? '#352818' : '#FDF4E4',
+      badgeText: isDark ? '#E4C08D' : '#AF7A36',
+      watermark: isDark ? 'rgba(198,139,47,0.14)' : 'rgba(198,139,47,0.06)',
+    }),
+    [isDark]
+  );
 
   useEffect(() => {
     fetch('https://open-api.my.id/api/doa')
@@ -47,28 +67,34 @@ export default function DoaHarian() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#C68B2F" />
+      <View style={[styles.center, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.gold} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+      <View style={styles.topBarWrap}>
+        <Pressable hitSlop={10} onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+        </Pressable>
+        <Text style={[styles.topBarTitle, { color: theme.text }]}>Doa Harian</Text>
+        <View style={styles.topBarSpacer} />
+      </View>
       
       {/* ─── HEADER & SEARCH BAR ─── */}
       <View style={styles.headerWrap}>
-        <Text style={styles.pageTitle}>Doa Harian</Text>
-        <Text style={styles.pageSubtitle}>Kumpulan doa pilihan untuk diamalkan setiap hari.</Text>
+        <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Kumpulan doa pilihan untuk diamalkan setiap hari.</Text>
 
-        <View style={styles.searchWrap}>
-          <Ionicons name="search-outline" size={18} color="#8A7255" />
+        <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="search-outline" size={18} color={theme.muted} />
           <TextInput
             value={query}
             onChangeText={setQuery}
             placeholder="Cari judul doa..."
-            placeholderTextColor="#A89277"
-            style={styles.searchInput}
+            placeholderTextColor={theme.muted}
+            style={[styles.searchInput, { color: theme.body }]}
           />
         </View>
       </View>
@@ -83,30 +109,34 @@ export default function DoaHarian() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>Doa tidak ditemukan.</Text>
+            <Text style={[styles.emptyText, { color: theme.muted }]}>Doa tidak ditemukan.</Text>
           </View>
         }
         renderItem={({ item }) => (
           <Pressable 
-            style={({ pressed }) => [styles.gridCard, pressed && styles.gridCardPressed]}
+            style={({ pressed }) => [
+              styles.gridCard,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+              pressed && [styles.gridCardPressed, { backgroundColor: theme.pressed }],
+            ]}
             onPress={() => router.push({ pathname: '/Detail_doa', params: { id: item.id } })}
           >
             {/* Watermark Angka Raksasa di Background */}
-            <Text style={styles.watermark} numberOfLines={1}>
+            <Text style={[styles.watermark, { color: theme.watermark }]} numberOfLines={1}>
               {String(item.id).padStart(2, '0')}
             </Text>
 
             {/* Bagian Atas Card: Icon & Badge Kecil */}
             <View style={styles.cardHeader}>
               <MaterialCommunityIcons name="hands-pray" size={24} color="#C68B2F" />
-              <View style={styles.miniBadge}>
-                <Text style={styles.miniBadgeText}>Doa</Text>
+              <View style={[styles.miniBadge, { backgroundColor: isDark ? 'rgba(198,139,47,0.2)' : 'rgba(198,139,47,0.1)' }]}>
+                <Text style={[styles.miniBadgeText, { color: theme.badgeText }]}>Doa</Text>
               </View>
             </View>
 
             {/* Judul Doa */}
             <View style={styles.cardBody}>
-              <Text style={styles.cardTitle} numberOfLines={3}>
+              <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={3}>
                 {item.judul}
               </Text>
             </View>
@@ -128,17 +158,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F7F1E8',
   },
-  headerWrap: {
+  topBarWrap: {
+    minHeight: 50,
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 14,
-    gap: 10,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  pageTitle: {
-    fontSize: 30,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    fontSize: 18,
     fontWeight: '800',
     color: '#1C1408',
     fontFamily: 'serif',
+  },
+  topBarSpacer: {
+    width: 38,
+    height: 38,
+  },
+  headerWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 14,
+    gap: 10,
   },
   pageSubtitle: {
     fontSize: 13,

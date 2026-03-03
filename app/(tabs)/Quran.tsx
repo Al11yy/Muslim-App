@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,16 +8,20 @@ import {
   ImageBackground,
   Modal,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  ViewToken,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getSurahBookmarks, toggleSurahBookmarkStorage } from '@/lib/quran-bookmarks';
+import { showSaveFeedback } from '@/lib/save-feedback';
 import { useThemePreference } from '@/contexts/theme-preference';
+import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 
 // ─── 1. MAPPING DATA UNTUK FILTER JUZ & HALAMAN ──────────────────────────────
 const SURAH_TO_JUZ: Record<number, number> = {
@@ -59,6 +63,14 @@ type SurahListItem = {
   tempat_turun: string;
   arti?: string;
 };
+type GroupHeaderItem = { __header: string };
+type QuranListItem = SurahListItem | GroupHeaderItem;
+
+const parseJuzHeader = (header: string) => {
+  if (!header.startsWith('Juz ')) return null;
+  const numberPart = Number(header.replace('Juz ', '').trim());
+  return Number.isNaN(numberPart) ? null : numberPart;
+};
 
 // ─── KOMPONEN UTAMA ──────────────────────────────────────────────────────────
 export default function Quran() {
@@ -68,11 +80,15 @@ export default function Quran() {
   const [data, setData] = useState<SurahListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<FilterTab>('Surah');
+  const [activeTab, setActiveTab] = useState<FilterTab>('Juz');
   const [lastRead, setLastRead] = useState<SurahListItem | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [surahBookmarks, setSurahBookmarks] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedJuzChip, setSelectedJuzChip] = useState<number | null>(null);
+  const flatListRef = useRef<FlatList<QuranListItem> | null>(null);
+  const activeTabRef = useRef<FilterTab>('Juz');
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 35 });
   const theme = useMemo(
     () => ({
       bg: isDark ? '#1A130B' : '#F7F1E8',
@@ -113,6 +129,9 @@ export default function Quran() {
   };
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   const toggleSurahBookmark = async (surah: SurahListItem) => {
     const result = await toggleSurahBookmarkStorage({
@@ -128,6 +147,11 @@ export default function Quran() {
       ...prev,
       [surah.nomor]: result.bookmarked,
     }));
+    showSaveFeedback({
+      saved: result.bookmarked,
+      label: `${surah.nama_latin}`,
+      entity: 'Surat',
+    });
   };
 
   const filteredData = useMemo(() => {
@@ -154,7 +178,7 @@ export default function Quran() {
         if (!groups.has(juz)) groups.set(juz, []);
         groups.get(juz)!.push(s);
       });
-      const flat: (SurahListItem | { __header: string })[] = [];
+      const flat: QuranListItem[] = [];
       for (const [juz, surahs] of Array.from(groups.entries()).sort(([a], [b]) => a - b)) {
         flat.push({ __header: `Juz ${juz}` });
         flat.push(...surahs);
@@ -168,13 +192,82 @@ export default function Quran() {
       if (!groups.has(pg)) groups.set(pg, []);
       groups.get(pg)!.push(s);
     });
-    const flat: (SurahListItem | { __header: string })[] = [];
+    const flat: QuranListItem[] = [];
     for (const [pg, surahs] of Array.from(groups.entries()).sort(([a], [b]) => a - b)) {
       flat.push({ __header: `Halaman ${(pg - 1) * PAGE_GROUP_SIZE + 1}–${pg * PAGE_GROUP_SIZE}` });
       flat.push(...surahs);
     }
     return flat;
   }, [filteredData, activeTab]);
+
+  const isHeader = (item: QuranListItem): item is GroupHeaderItem => typeof (item as GroupHeaderItem)?.__header === 'string';
+
+  const juzHeaderIndexes = useMemo(() => {
+    const map: Record<number, number> = {};
+    groupedData.forEach((item, index) => {
+      if (!isHeader(item) || !item.__header.startsWith('Juz ')) return;
+      const juzNumber = parseJuzHeader(item.__header);
+      if (juzNumber) map[juzNumber] = index;
+    });
+    return map;
+  }, [groupedData]);
+
+  const availableJuzNumbers = useMemo(
+    () => Object.keys(juzHeaderIndexes).map(Number).sort((a, b) => a - b),
+    [juzHeaderIndexes]
+  );
+
+  useEffect(() => {
+    if (activeTab !== 'Juz') {
+      setSelectedJuzChip(null);
+      return;
+    }
+    if (!availableJuzNumbers.length) {
+      setSelectedJuzChip(null);
+      return;
+    }
+    if (selectedJuzChip && availableJuzNumbers.includes(selectedJuzChip)) return;
+    setSelectedJuzChip(availableJuzNumbers[0]);
+  }, [activeTab, availableJuzNumbers, selectedJuzChip]);
+
+  const jumpToJuz = useCallback((juzNumber: number) => {
+    const index = juzHeaderIndexes[juzNumber];
+    if (index === undefined) return;
+    setSelectedJuzChip(juzNumber);
+    flatListRef.current?.scrollToIndex({
+      index,
+      animated: true,
+      viewPosition: 0.06,
+    });
+  }, [juzHeaderIndexes]);
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (activeTabRef.current !== 'Juz' || !viewableItems.length) return;
+
+      let nextJuz: number | null = null;
+      for (const token of viewableItems) {
+        const item = token.item as QuranListItem | null;
+        if (!item) continue;
+
+        if (isHeader(item)) {
+          const parsed = parseJuzHeader(item.__header);
+          if (parsed) {
+            nextJuz = parsed;
+            break;
+          }
+          continue;
+        }
+
+        nextJuz = SURAH_TO_JUZ[item.nomor] ?? null;
+        if (nextJuz) break;
+      }
+
+      if (nextJuz) {
+        setSelectedJuzChip((prev) => (prev === nextJuz ? prev : nextJuz));
+      }
+    }
+  ).current;
 
   // Loading & Error States
   if (loading) {
@@ -197,8 +290,6 @@ export default function Quran() {
     );
   }
 
-  const isHeader = (item: any): item is { __header: string } => typeof item?.__header === 'string';
-
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
@@ -210,14 +301,41 @@ export default function Quran() {
         imageStyle={styles.mainBackgroundImage}
         resizeMode="repeat"
       >
+        <View style={styles.topBarWrap}>
+          <View style={styles.topBar}>
+            <TouchableOpacity hitSlop={8} onPress={() => router.push('/bookmark_Quran')}>
+              <Ionicons name="bookmark-outline" size={24} color={theme.text} />
+            </TouchableOpacity>
+            <Text style={[styles.screenTitle, { color: theme.text }]}>QURAN</Text>
+            <TouchableOpacity hitSlop={8} onPress={() => setIsFilterOpen((prev) => !prev)}>
+              <Ionicons name="options-outline" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <FlatList
+          ref={flatListRef}
           data={groupedData}
+          viewabilityConfig={viewabilityConfig.current}
+          onViewableItemsChanged={onViewableItemsChanged}
           keyExtractor={(item, i) => isHeader(item) ? `h-${i}` : String(item.nomor)}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
+          onScroll={notifyTabBarScroll}
           onScrollBeginDrag={() => {
+            notifyTabBarScroll();
             if (isFilterOpen) setIsFilterOpen(false);
           }}
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            flatListRef.current?.scrollToOffset({
+              offset: Math.max(0, index * averageItemLength - 160),
+              animated: true,
+            });
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.08 });
+            }, 180);
+          }}
+          scrollEventThrottle={16}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Text style={[styles.emptyText, { color: theme.muted }]}>Surat tidak ditemukan.</Text>
@@ -225,17 +343,6 @@ export default function Quran() {
           }
           ListHeaderComponent={
             <>
-              {/* Top bar */}
-              <View style={styles.topBar}>
-                <TouchableOpacity hitSlop={8} onPress={() => router.push('/bookmark_Quran')}>
-                  <Ionicons name="bookmark-outline" size={24} color={theme.text} />
-                </TouchableOpacity>
-                <Text style={[styles.screenTitle, { color: theme.text }]}>QURAN</Text>
-                <TouchableOpacity hitSlop={8} onPress={() => setIsFilterOpen((prev) => !prev)}>
-                  <Ionicons name="options-outline" size={24} color={theme.text} />
-                </TouchableOpacity>
-              </View>
-
               {/* ─── Hero: Last Read ─── */}
               <View style={styles.hero}>
                 <Image
@@ -279,6 +386,31 @@ export default function Quran() {
                   <Ionicons name="chevron-down" size={14} color={theme.text} />
                 </TouchableOpacity>
               </View>
+
+              {activeTab === 'Juz' ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.juzScroller}>
+                  {availableJuzNumbers.map((juzNumber) => {
+                    const selected = selectedJuzChip === juzNumber;
+                    return (
+                      <Pressable
+                        key={juzNumber}
+                        style={[
+                          styles.juzChip,
+                          { borderColor: theme.border, backgroundColor: theme.softSurface },
+                          selected && styles.juzChipActive,
+                        ]}
+                        onPress={() => jumpToJuz(juzNumber)}>
+                        <Text style={[styles.juzChipText, { color: theme.muted }, selected && styles.juzChipTextActive]}>
+                          {`Juz ${juzNumber}`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
             </>
           }
           renderItem={({ item }) => {
@@ -417,13 +549,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
   },
+  topBarWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
 
   /* ─── Top bar ─── */
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 20,
+    paddingBottom: 8,
   },
   screenTitle: {
     fontSize: 16,
@@ -472,6 +609,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  juzScroller: {
+    gap: 8,
+    paddingBottom: 14,
+  },
+  juzChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  juzChipActive: {
+    backgroundColor: '#C68B2F',
+    borderColor: '#C68B2F',
+  },
+  juzChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: TEXT_MUTED,
+  },
+  juzChipTextActive: {
+    color: '#FFF',
+  },
   listTitle: {
     fontSize: 18,
     fontWeight: '700',
@@ -514,7 +673,7 @@ const styles = StyleSheet.create({
   dropdownOverlay: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 270,
+    paddingTop: 86,
     backgroundColor: 'rgba(0,0,0,0.08)',
   },
   filterDropdownModal: {

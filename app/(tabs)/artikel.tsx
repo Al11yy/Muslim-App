@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemePreference } from '@/contexts/theme-preference';
+import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 
 type ArticleItem = {
   title: string;
@@ -108,16 +109,21 @@ export default function Artikel() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+      <View style={styles.topBarWrap}>
+        <Text style={[styles.pageTitle, { color: theme.text }]}>Artikel</Text>
+        <Text style={[styles.pageSubtitle, { color: theme.body }]}>Khazanah Islami terbaru dari Republika.</Text>
+      </View>
+
       <FlatList
         data={filtered}
         keyExtractor={(item, index) => `${item.link}-${index}`}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        onScroll={notifyTabBarScroll}
+        onScrollBeginDrag={notifyTabBarScroll}
+        scrollEventThrottle={16}
         ListHeaderComponent={
           <View style={styles.headerWrap}>
-            <Text style={[styles.pageTitle, { color: theme.text }]}>Artikel</Text>
-            <Text style={[styles.pageSubtitle, { color: theme.body }]}>Khazanah Islami terbaru dari Republika.</Text>
-
             <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Ionicons name="search-outline" size={18} color={theme.muted} />
               <TextInput
@@ -207,8 +213,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  headerWrap: {
+  topBarWrap: {
+    paddingHorizontal: 16,
     paddingTop: 8,
+    paddingBottom: 8,
+    gap: 2,
+  },
+  headerWrap: {
+    paddingTop: 4,
     paddingBottom: 14,
     gap: 10,
   },

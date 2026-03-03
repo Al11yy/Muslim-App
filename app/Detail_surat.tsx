@@ -1,5 +1,10 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Audio, AVPlaybackStatusSuccess } from 'expo-av';
+import {
+  Audio,
+  AVPlaybackStatusSuccess,
+  InterruptionModeAndroid,
+  InterruptionModeIOS,
+} from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +31,7 @@ import {
   toggleAyahBookmarkStorage,
   toggleSurahBookmarkStorage,
 } from '@/lib/quran-bookmarks';
+import { showSaveFeedback } from '@/lib/save-feedback';
 
 interface Ayat {
   id: number;
@@ -61,9 +67,20 @@ type ReciterOption = {
   id: string;
   name: string;
 };
+type ReciterCatalogItem = ReciterOption & {
+  legacyFolder: string;
+};
 
 type LoopMode = 'off' | 'ayah' | 'surah';
 const BASMALAH_TEXT = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
+
+const RECITER_CATALOG: ReciterCatalogItem[] = [
+  { id: '1', name: 'Mishary Rashid Al Afasy', legacyFolder: 'Alafasy_128kbps' },
+  { id: '2', name: 'Abu Bakr Al Shatri', legacyFolder: 'Abu_Bakr_Ash-Shaatree_128kbps' },
+  { id: '3', name: 'Nasser Al Qatami', legacyFolder: 'Nasser_Alqatami_128kbps' },
+  { id: '4', name: 'Yasser Al Dosari', legacyFolder: 'Yasser_Ad-Dussary_128kbps' },
+  { id: '5', name: 'Hani Ar Rifai', legacyFolder: 'Hani_Rifai_128kbps' },
+];
 
 export default function Detail_surat() {
   const { nomor, ayah } = useLocalSearchParams<{ nomor: string; ayah?: string }>();
@@ -156,6 +173,38 @@ export default function Detail_surat() {
   }, [nomor]);
 
   const getVerseKey = (surahNo: number, ayahNo: number) => `${surahNo}:${ayahNo}`;
+  const pad3 = (value: number) => String(value).padStart(3, '0');
+
+  const buildReciterAudioMap = useCallback((surahNo: number, ayahNo: number): ReciterAudioMap => {
+    const surahPart = pad3(surahNo);
+    const ayahPart = pad3(ayahNo);
+
+    return RECITER_CATALOG.reduce<ReciterAudioMap>((acc, reciter) => {
+      acc[reciter.id] = {
+        reciter: reciter.name,
+        url: `https://the-quran-project.github.io/Quran-Audio/Data/${reciter.id}/${surahNo}_${ayahNo}.mp3`,
+        originalUrl: `https://everyayah.com/data/${reciter.legacyFolder}/${surahPart}${ayahPart}.mp3`,
+      };
+      return acc;
+    }, {});
+  }, []);
+
+  const ensureBackgroundAudioMode = useCallback(async () => {
+    try {
+      await Audio.setIsEnabledAsync(true);
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch (error) {
+      console.error('Failed to set audio mode:', error);
+    }
+  }, []);
 
   const showSwipeChangeNotice = (label: string) => {
     if (swipeNoticeTimeoutRef.current) clearTimeout(swipeNoticeTimeoutRef.current);
@@ -215,15 +264,10 @@ export default function Detail_surat() {
     const cached = audioCacheRef.current[cacheKey];
     if (cached) return cached;
 
-    const response = await fetch(`https://quranapi.pages.dev/api/audio/${surahNo}/${ayahNo}.json`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch audio for ${cacheKey}`);
-    }
-
-    const result = (await response.json()) as ReciterAudioMap;
+    const result = buildReciterAudioMap(surahNo, ayahNo);
     audioCacheRef.current[cacheKey] = result;
     return result;
-  }, []);
+  }, [buildReciterAudioMap]);
 
   const warmAudioWindow = useCallback((surahNo: number, ayahNo: number) => {
     void getAudioForAyah(surahNo, ayahNo).catch(() => undefined);
@@ -250,6 +294,8 @@ export default function Detail_surat() {
   };
 
   const playSpecificAyah = async (surahNo: number, ayahNo: number) => {
+    await ensureBackgroundAudioMode();
+
     const verseKey = getVerseKey(surahNo, ayahNo);
     setIsPlayerVisible(true);
     setPlayingAyahKey(verseKey);
@@ -278,24 +324,38 @@ export default function Detail_surat() {
       const targetAudio = reciterMap[availableReciterId];
 
       await unloadSound();
+      const sourceCandidates = [targetAudio.url, targetAudio.originalUrl];
+      const onPlaybackStatus = (status: unknown) => {
+        if (!status || typeof status !== 'object' || !('isLoaded' in status)) return;
+        const loadedStatus = status as AVPlaybackStatusSuccess;
+        if (!loadedStatus.isLoaded) return;
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: targetAudio.url },
-        { shouldPlay: true },
-        (status) => {
-          if (!status.isLoaded) return;
-          const loadedStatus = status as AVPlaybackStatusSuccess;
-          setIsPlaying(loadedStatus.isPlaying);
-          setPositionMillis(loadedStatus.positionMillis ?? 0);
-          setDurationMillis(loadedStatus.durationMillis ?? 0);
+        setIsPlaying(loadedStatus.isPlaying);
+        setPositionMillis(loadedStatus.positionMillis ?? 0);
+        setDurationMillis(loadedStatus.durationMillis ?? 0);
 
-          if (loadedStatus.didJustFinish) {
-            void handleTrackFinished();
-          }
+        if (loadedStatus.didJustFinish) {
+          void handleTrackFinished();
         }
-      );
+      };
 
-      soundRef.current = sound;
+      let createdSound: Audio.Sound | null = null;
+      let lastError: unknown = null;
+      for (const uri of sourceCandidates) {
+        try {
+          const created = await Audio.Sound.createAsync({ uri }, { shouldPlay: true }, onPlaybackStatus);
+          createdSound = created.sound;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!createdSound) {
+        throw lastError ?? new Error('No playable source for this ayah');
+      }
+
+      soundRef.current = createdSound;
       playingContextRef.current = { surahNo: targetSurah.nomor, ayahNo: targetAyah };
       setPlayingAyahKey(getVerseKey(targetSurah.nomor, targetAyah));
       setIsPlaying(true);
@@ -304,9 +364,9 @@ export default function Detail_surat() {
       }
       warmAudioWindow(targetSurah.nomor, targetAyah);
     } catch (error) {
-      console.error('Failed to play ayah:', error);
+      console.warn('Failed to play ayah:', error);
       setIsPlaying(false);
-      Alert.alert('Gagal memutar audio', 'Coba lagi beberapa saat.');
+      Alert.alert('Gagal memutar audio', 'Periksa koneksi internet lalu coba lagi.');
     } finally {
       setIsAudioBusy(false);
     }
@@ -487,6 +547,11 @@ export default function Detail_surat() {
       arti: data.arti,
     });
     setSurahBookmarked(result.bookmarked);
+    showSaveFeedback({
+      saved: result.bookmarked,
+      label: data.nama_latin,
+      entity: 'Surat',
+    });
   };
 
   const toggleBookmark = async (ayah: Ayat) => {
@@ -506,6 +571,11 @@ export default function Detail_surat() {
       return acc;
     }, {});
     setBookmarks(map);
+    showSaveFeedback({
+      saved: result.bookmarked,
+      label: `${data.nama_latin} ${ayah.nomor}`,
+      entity: 'Ayat',
+    });
   };
 
   const shareAyah = async (ayah: Ayat) => {
@@ -572,22 +642,8 @@ export default function Detail_surat() {
   });
 
   useEffect(() => {
-    const setupAudio = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: false,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (error) {
-        console.error('Failed to set audio mode:', error);
-      }
-    };
-
-    void setupAudio();
-  }, []);
+    void ensureBackgroundAudioMode();
+  }, [ensureBackgroundAudioMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -616,14 +672,12 @@ export default function Detail_surat() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadReciters = async () => {
+    const loadReciters = () => {
       if (!data?.nomor || !data.ayat.length) return;
       setLoadingReciters(true);
 
       try {
-        const firstAyah = data.ayat[0].nomor;
-        const audioMap = await getAudioForAyah(data.nomor, firstAyah);
-        const options = Object.entries(audioMap).map(([id, entry]) => ({ id, name: entry.reciter }));
+        const options = RECITER_CATALOG.map(({ id, name }) => ({ id, name }));
 
         if (cancelled) return;
 
@@ -643,12 +697,12 @@ export default function Detail_surat() {
       }
     };
 
-    void loadReciters();
+    loadReciters();
 
     return () => {
       cancelled = true;
     };
-  }, [data?.nomor, data?.ayat, getAudioForAyah]);
+  }, [data?.nomor, data?.ayat]);
 
   useEffect(() => {
     let cancelled = false;
@@ -720,6 +774,46 @@ export default function Detail_surat() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']} {...panResponder.panHandlers}>
+      <View style={styles.topBarWrap}>
+        <View style={styles.topBar}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="chevron-back" size={20} color={theme.text} />
+          </Pressable>
+
+          <Text style={[styles.topTitle, { color: theme.text }]}>QURAN</Text>
+
+          <View style={styles.topRightActions}>
+            <Pressable
+              onPress={() => setShowSettingsModal(true)}
+              hitSlop={10}
+              style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons name="options-outline" size={18} color={theme.text} />
+            </Pressable>
+
+            <Pressable
+              onPress={() => void toggleSurahBookmark()}
+              hitSlop={10}
+              style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons
+                name={surahBookmarked ? 'bookmark' : 'bookmark-outline'}
+                size={18}
+                color={surahBookmarked ? theme.gold : theme.text}
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={() => void refreshSurah()}
+              hitSlop={10}
+              style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Ionicons name="refresh-outline" size={18} color={theme.text} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
       <FlatList
         ref={flatListRef}
         data={data.ayat}
@@ -751,44 +845,6 @@ export default function Detail_surat() {
         }
         ListHeaderComponent={
           <View style={styles.headerWrap}>
-            <View style={styles.topBar}>
-              <Pressable
-                onPress={() => router.back()}
-                hitSlop={10}
-                style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Ionicons name="chevron-back" size={20} color={theme.text} />
-              </Pressable>
-
-              <Text style={[styles.topTitle, { color: theme.text }]}>QURAN</Text>
-
-              <View style={styles.topRightActions}>
-                <Pressable
-                  onPress={() => setShowSettingsModal(true)}
-                  hitSlop={10}
-                  style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Ionicons name="options-outline" size={18} color={theme.text} />
-                </Pressable>
-
-                <Pressable
-                  onPress={() => void toggleSurahBookmark()}
-                  hitSlop={10}
-                  style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Ionicons
-                    name={surahBookmarked ? 'bookmark' : 'bookmark-outline'}
-                    size={18}
-                    color={surahBookmarked ? theme.gold : theme.text}
-                  />
-                </Pressable>
-
-                <Pressable
-                  onPress={() => void refreshSurah()}
-                  hitSlop={10}
-                  style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Ionicons name="refresh-outline" size={18} color={theme.text} />
-                </Pressable>
-              </View>
-            </View>
-
             <ImageBackground
               source={require('../assets/images/bg_detail_surat.png')}
               style={styles.surahCard}
@@ -1259,10 +1315,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 230,
   },
+  topBarWrap: {
+    paddingHorizontal: 14,
+    paddingTop: 2,
+    paddingBottom: 4,
+  },
   headerWrap: {
     gap: 10,
     marginBottom: 8,
-    paddingTop: 2,
+    paddingTop: 0,
   },
   swipeHint: {
     textAlign: 'center',

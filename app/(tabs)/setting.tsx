@@ -1,10 +1,15 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemePreference, useThemePreference } from '@/contexts/theme-preference';
+import { getHaditsSavedIds, getDzikirSavedIds, clearSavedContentIds } from '@/lib/content-bookmarks';
+import { getAyahBookmarks, getSurahBookmarks, AYAH_BOOKMARKS_KEY, SURAH_BOOKMARKS_KEY } from '@/lib/quran-bookmarks';
+import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 
 type AppSettings = {
   notifPrayer: boolean;
@@ -13,6 +18,13 @@ type AppSettings = {
   keepScreenAwake: boolean;
   wifiOnlyDownload: boolean;
   arabicSize: 'normal' | 'besar';
+};
+
+type SavedStats = {
+  surah: number;
+  ayah: number;
+  dzikir: number;
+  hadits: number;
 };
 
 const SETTINGS_KEY = '@muslim_app_settings_v1';
@@ -26,9 +38,20 @@ const DEFAULT_SETTINGS: AppSettings = {
   arabicSize: 'normal',
 };
 
+const EMPTY_STATS: SavedStats = {
+  surah: 0,
+  ayah: 0,
+  dzikir: 0,
+  hadits: 0,
+};
+
 export default function Setting() {
+  const router = useRouter();
+  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
   const { preference, setPreference, resolvedTheme } = useThemePreference();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [savedStats, setSavedStats] = useState<SavedStats>(EMPTY_STATS);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -48,10 +71,94 @@ export default function Setting() {
     };
   }, []);
 
+  const loadSavedStats = useCallback(async () => {
+    setLoadingStats(true);
+    try {
+      const [surahs, ayahs, dzikirIds, haditsIds] = await Promise.all([
+        getSurahBookmarks(),
+        getAyahBookmarks(),
+        getDzikirSavedIds(),
+        getHaditsSavedIds(),
+      ]);
+      setSavedStats({
+        surah: surahs.length,
+        ayah: ayahs.length,
+        dzikir: dzikirIds.length,
+        hadits: haditsIds.length,
+      });
+    } finally {
+      setLoadingStats(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedStats();
+  }, [loadSavedStats]);
+
   const updateSettings = async (patch: Partial<AppSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      void AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleResetSettings = () => {
+    Alert.alert(
+      'Reset Pengaturan',
+      'Kembalikan semua pengaturan ke default?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => {
+            setSettings(DEFAULT_SETTINGS);
+            void AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearQuranBookmarks = () => {
+    Alert.alert(
+      'Hapus Bookmark Quran',
+      'Semua bookmark surat dan ayat akan dihapus. Lanjutkan?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await AsyncStorage.multiRemove([SURAH_BOOKMARKS_KEY, AYAH_BOOKMARKS_KEY]);
+              await loadSavedStats();
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearSavedContent = () => {
+    Alert.alert(
+      'Hapus Simpanan Konten',
+      'Semua simpanan Dzikir dan Hadits akan dihapus. Lanjutkan?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await clearSavedContentIds();
+              await loadSavedStats();
+            })();
+          },
+        },
+      ]
+    );
   };
 
   const colors = useMemo(
@@ -73,6 +180,11 @@ export default function Setting() {
             tabBg: '#2A2118',
             tabActiveBg: '#D8A24A',
             tabText: '#DCC8B0',
+            actionBg: '#2B2117',
+            actionText: '#F0DFC7',
+            dangerBg: '#4B251F',
+            dangerText: '#FFD5CE',
+            statPillBg: '#2F2419',
           }
         : {
             pageBg: '#F7F1E8',
@@ -90,18 +202,30 @@ export default function Setting() {
             tabBg: '#EFE3D0',
             tabActiveBg: '#C68B2F',
             tabText: '#7D664B',
+            actionBg: '#F8EEDA',
+            actionText: '#6F4D24',
+            dangerBg: '#FDE6E2',
+            dangerText: '#A33E31',
+            statPillBg: '#F5E9D1',
           },
     [resolvedTheme]
   );
 
   const dynamic = getStyles(colors);
+  const totalSaved = savedStats.surah + savedStats.ayah + savedStats.dzikir + savedStats.hadits;
 
   return (
     <SafeAreaView style={dynamic.container} edges={['top']}>
-      <ScrollView contentContainerStyle={dynamic.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={dynamic.content}
+        showsVerticalScrollIndicator={false}
+        onScroll={notifyTabBarScroll}
+        onScrollBeginDrag={notifyTabBarScroll}
+        scrollEventThrottle={16}>
         <View style={dynamic.header}>
           <Text style={dynamic.title}>Settings</Text>
           <Text style={dynamic.subtitle}>Atur preferensi aplikasi sesuai kebutuhanmu.</Text>
+          <Text style={dynamic.metaText}>{`Version ${appVersion}`}</Text>
         </View>
 
         <View style={dynamic.sectionCard}>
@@ -242,9 +366,105 @@ export default function Setting() {
         </View>
 
         <View style={dynamic.sectionCard}>
+          <Text style={dynamic.sectionTitle}>Shortcut Cepat</Text>
+
+          <Pressable style={dynamic.linkRow} onPress={() => router.push('/bookmark_Quran')}>
+            <View style={dynamic.rowLeft}>
+              <Ionicons name="bookmark-outline" size={18} color={colors.accent} />
+              <Text style={dynamic.rowLabel}>Bookmark Quran</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.iconMuted} />
+          </Pressable>
+
+          <View style={dynamic.rowDivider} />
+
+          <Pressable style={dynamic.linkRow} onPress={() => router.push('/calculator_zakat')}>
+            <View style={dynamic.rowLeft}>
+              <MaterialCommunityIcons name="calculator-variant-outline" size={18} color={colors.accent} />
+              <Text style={dynamic.rowLabel}>Calculator Zakat</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.iconMuted} />
+          </Pressable>
+
+          <View style={dynamic.rowDivider} />
+
+          <Pressable style={dynamic.linkRow} onPress={() => router.push('/Donasi')}>
+            <View style={dynamic.rowLeft}>
+              <MaterialCommunityIcons name="hand-heart-outline" size={18} color={colors.accent} />
+              <Text style={dynamic.rowLabel}>Donasi</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.iconMuted} />
+          </Pressable>
+        </View>
+
+        <View style={dynamic.sectionCard}>
+          <Text style={dynamic.sectionTitle}>Data & Penyimpanan</Text>
+
+          <View style={dynamic.statHeader}>
+            <Text style={dynamic.rowLabel}>Total tersimpan</Text>
+            <View style={[dynamic.statPill, { backgroundColor: colors.statPillBg }]}>
+              <Text style={dynamic.statPillText}>{loadingStats ? '...' : totalSaved}</Text>
+            </View>
+          </View>
+
+          <View style={dynamic.statGrid}>
+            <View style={dynamic.statItem}>
+              <Text style={dynamic.statLabel}>Surah</Text>
+              <Text style={dynamic.statValue}>{loadingStats ? '-' : savedStats.surah}</Text>
+            </View>
+            <View style={dynamic.statItem}>
+              <Text style={dynamic.statLabel}>Ayat</Text>
+              <Text style={dynamic.statValue}>{loadingStats ? '-' : savedStats.ayah}</Text>
+            </View>
+            <View style={dynamic.statItem}>
+              <Text style={dynamic.statLabel}>Dzikir</Text>
+              <Text style={dynamic.statValue}>{loadingStats ? '-' : savedStats.dzikir}</Text>
+            </View>
+            <View style={dynamic.statItem}>
+              <Text style={dynamic.statLabel}>Hadits</Text>
+              <Text style={dynamic.statValue}>{loadingStats ? '-' : savedStats.hadits}</Text>
+            </View>
+          </View>
+
+          <View style={dynamic.actionWrap}>
+            <Pressable
+              style={[dynamic.actionBtn, { backgroundColor: colors.actionBg }]}
+              onPress={() => {
+                void loadSavedStats();
+              }}>
+              <Ionicons name="refresh-outline" size={14} color={colors.actionText} />
+              <Text style={[dynamic.actionText, { color: colors.actionText }]}>Refresh Statistik</Text>
+            </Pressable>
+
+            <Pressable
+              style={[dynamic.actionBtn, { backgroundColor: colors.actionBg }]}
+              onPress={handleClearQuranBookmarks}>
+              <Ionicons name="trash-outline" size={14} color={colors.actionText} />
+              <Text style={[dynamic.actionText, { color: colors.actionText }]}>Hapus Bookmark Quran</Text>
+            </Pressable>
+
+            <Pressable
+              style={[dynamic.actionBtn, { backgroundColor: colors.actionBg }]}
+              onPress={handleClearSavedContent}>
+              <Ionicons name="trash-bin-outline" size={14} color={colors.actionText} />
+              <Text style={[dynamic.actionText, { color: colors.actionText }]}>Hapus Simpanan Konten</Text>
+            </Pressable>
+
+            <Pressable
+              style={[dynamic.actionBtn, { backgroundColor: colors.dangerBg }]}
+              onPress={handleResetSettings}>
+              <Ionicons name="reload-outline" size={14} color={colors.dangerText} />
+              <Text style={[dynamic.actionText, { color: colors.dangerText }]}>Reset Pengaturan Default</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={dynamic.sectionCard}>
           <Text style={dynamic.sectionTitle}>Lainnya</Text>
 
-          <Pressable style={dynamic.linkRow}>
+          <Pressable
+            style={dynamic.linkRow}
+            onPress={() => Alert.alert('Kebijakan Privasi', 'Halaman kebijakan privasi akan ditambahkan pada versi berikutnya.')}>
             <View style={dynamic.rowLeft}>
               <Ionicons name="document-text-outline" size={18} color={colors.accent} />
               <Text style={dynamic.rowLabel}>Kebijakan Privasi</Text>
@@ -254,7 +474,14 @@ export default function Setting() {
 
           <View style={dynamic.rowDivider} />
 
-          <Pressable style={dynamic.linkRow}>
+          <Pressable
+            style={dynamic.linkRow}
+            onPress={() =>
+              Alert.alert(
+                'Tentang Aplikasi',
+                `Al Ukhuwah\nVersion ${appVersion}\n\nMuslim companion app untuk ibadah harian, Quran, dzikir, dan konten islami.`
+              )
+            }>
             <View style={dynamic.rowLeft}>
               <Ionicons name="information-circle-outline" size={18} color={colors.accent} />
               <Text style={dynamic.rowLabel}>Tentang Aplikasi</Text>
@@ -283,6 +510,11 @@ function getStyles(colors: {
   tabBg: string;
   tabActiveBg: string;
   tabText: string;
+  actionBg: string;
+  actionText: string;
+  dangerBg: string;
+  dangerText: string;
+  statPillBg: string;
 }) {
   return StyleSheet.create({
     container: {
@@ -309,6 +541,12 @@ function getStyles(colors: {
       fontSize: 13,
       color: colors.textSecondary,
       lineHeight: 20,
+    },
+    metaText: {
+      marginTop: 6,
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '600',
     },
     sectionCard: {
       backgroundColor: colors.cardBg,
@@ -388,28 +626,68 @@ function getStyles(colors: {
       color: colors.textSecondary,
       fontWeight: '600',
     },
-    todoBox: {
+    statHeader: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
       gap: 8,
-      backgroundColor: colors.tabBg,
+    },
+    statPill: {
+      minWidth: 40,
+      height: 24,
       borderRadius: 12,
-      padding: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 8,
     },
-    todoBody: {
-      flex: 1,
-      minWidth: 0,
-    },
-    todoTitle: {
-      fontSize: 13,
-      color: colors.textPrimary,
-      fontWeight: '700',
-      marginBottom: 3,
-    },
-    todoDesc: {
+    statPillText: {
       fontSize: 12,
+      fontWeight: '800',
+      color: colors.accent,
+    },
+    statGrid: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 10,
+    },
+    statItem: {
+      flex: 1,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
+      backgroundColor: colors.tabBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      gap: 2,
+    },
+    statLabel: {
+      fontSize: 11,
       color: colors.textSecondary,
-      lineHeight: 18,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+    },
+    statValue: {
+      fontSize: 18,
+      color: colors.textPrimary,
+      fontWeight: '800',
+    },
+    actionWrap: {
+      gap: 8,
+    },
+    actionBtn: {
+      minHeight: 38,
+      borderRadius: 11,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    actionText: {
+      fontSize: 12,
+      fontWeight: '700',
     },
   });
 }

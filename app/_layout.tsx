@@ -33,6 +33,12 @@ function RootNavigator() {
         <Stack.Screen name="bookmark_Quran" options={{ headerShown: false }} />
         <Stack.Screen name="Detail_doa" options={{ headerShown: false }} />
         <Stack.Screen name="Detail_hadits" options={{ headerShown: false}} />
+        <Stack.Screen name="More" options={{ headerShown: false }} />
+        <Stack.Screen name="calender_islami" options={{ headerShown: false }} />
+        <Stack.Screen name="Donasi" options={{ headerShown: false }} />
+        <Stack.Screen name="calculator_zakat" options={{ headerShown: false }} />
+        <Stack.Screen name="tasbih_digital" options={{ headerShown: false }} />
+        <Stack.Screen name="checklist_ibadah" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={resolvedTheme === 'dark' ? 'light' : 'dark'} />

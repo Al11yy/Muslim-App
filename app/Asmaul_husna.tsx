@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av'; // Import dari expo-av
+import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,6 +23,7 @@ interface AsmaulHusnaItem {
 }
 
 export default function AsmaulHusna() {
+  const router = useRouter();
   const { resolvedTheme } = useThemePreference();
   const isDark = resolvedTheme === 'dark';
   const [data, setData] = useState<AsmaulHusnaItem[]>([]);
@@ -80,9 +82,6 @@ export default function AsmaulHusna() {
     );
   }, [data, query]);
 
- // Ingat tambahin 'Alert' di import react-native atas lu:
-// import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
-
 const playAudio = async (urutan: number) => {
   if (playingId === urutan) return;
 
@@ -130,10 +129,16 @@ const playAudio = async (urutan: number) => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+      <View style={styles.topBarWrap}>
+        <Pressable hitSlop={10} onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+        </Pressable>
+        <Text style={[styles.topBarTitle, { color: theme.text }]}>Asmaul Husna</Text>
+        <View style={styles.topBarSpacer} />
+      </View>
       
       {/* ─── HEADER ─── */}
       <View style={styles.headerWrap}>
-        <Text style={[styles.pageTitle, { color: theme.text }]}>Asmaul Husna</Text>
         <Text style={[styles.pageSubtitle, { color: theme.muted }]}>99 nama Allah yang indah untuk dzikir dan tadabbur.</Text>
 
         <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -225,15 +230,36 @@ const styles = StyleSheet.create({
   },
   headerWrap: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 4,
     paddingBottom: 14,
     gap: 10,
   },
-  pageTitle: {
-    fontSize: 30,
+  topBarWrap: {
+    minHeight: 50,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    fontSize: 18,
     fontWeight: '800',
     color: '#1C1408',
     fontFamily: 'serif',
+  },
+  topBarSpacer: {
+    width: 38,
+    height: 38,
   },
   pageSubtitle: {
     fontSize: 13,

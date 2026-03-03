@@ -1,10 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BottomTabBar, BottomTabBarButtonProps, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Tabs } from 'expo-router';
-import React, { useMemo } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { useThemePreference } from '@/contexts/theme-preference';
+import { subscribeTabBarScroll } from '@/lib/tab-bar-visibility';
 
 type TabColors = {
   bgTab: string;
@@ -39,8 +41,8 @@ function CustomAiTabBarButton({
   accessibilityState,
   colors,
 }: {
-  onPress?: () => void;
-  accessibilityState?: { selected?: boolean };
+  onPress?: BottomTabBarButtonProps['onPress'];
+  accessibilityState?: BottomTabBarButtonProps['accessibilityState'];
   colors: TabColors;
 }) {
   const focused = accessibilityState?.selected ?? false;
@@ -58,11 +60,83 @@ function CustomAiTabBarButton({
             },
             focused && { backgroundColor: colors.aiFocused, transform: [{ scale: 1.05 }] },
           ]}>
-          <MaterialCommunityIcons name="robot-outline" size={28} color={colors.white} />
+          <Image source={require('../../assets/images/logo-AlUkhuwah-noBg.png')} style={styles.aiLogo} resizeMode="contain" />
         </View>
         <Text style={[styles.label, { color: focused ? colors.activeText : colors.inactiveText }]}>AI Chat</Text>
       </View>
     </TouchableOpacity>
+  );
+}
+
+function AnimatedTabBar(props: BottomTabBarProps) {
+  const [isInteractive, setIsInteractive] = useState(false);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(56)).current;
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearHideTimer = useCallback(() => {
+    if (!hideTimerRef.current) return;
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = null;
+  }, []);
+
+  const hideBar = useCallback(() => {
+    clearHideTimer();
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 56,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setIsInteractive(false);
+    });
+  }, [clearHideTimer, opacity, translateY]);
+
+  const showBar = useCallback(() => {
+    setIsInteractive(true);
+    clearHideTimer();
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    hideTimerRef.current = setTimeout(() => {
+      hideBar();
+    }, 5000);
+  }, [clearHideTimer, hideBar, opacity, translateY]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTabBarScroll(showBar);
+    return () => {
+      unsubscribe();
+      clearHideTimer();
+    };
+  }, [clearHideTimer, showBar]);
+
+  return (
+    <Animated.View
+      pointerEvents={isInteractive ? 'auto' : 'none'}
+      style={[styles.tabBarAnimator, { opacity, transform: [{ translateY }] }]}>
+      <BottomTabBar {...props} />
+    </Animated.View>
   );
 }
 
@@ -100,6 +174,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarButton: HapticTab,
@@ -163,8 +238,8 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
-    left: 20,
-    right: 20,
+    left: 30,
+    right: 30,
     bottom: Platform.OS === 'ios' ? 24 : 16,
     height: 72,
     borderRadius: 26,
@@ -213,5 +288,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
+  },
+  aiLogo: {
+    width: 34,
+    height: 34,
+  },
+  tabBarAnimator: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });

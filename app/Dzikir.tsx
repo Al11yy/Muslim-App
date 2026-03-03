@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,6 +7,7 @@ import {
   LayoutAnimation,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +17,8 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemePreference } from '@/contexts/theme-preference';
+import { getDzikirSavedIds, toggleDzikirSavedId } from '@/lib/content-bookmarks';
+import { showSaveFeedback } from '@/lib/save-feedback';
 
 type DzikirApiItem = {
   type?: string;
@@ -34,6 +38,7 @@ type DzikirItem = {
 };
 
 export default function Dzikir() {
+  const router = useRouter();
   const { resolvedTheme } = useThemePreference();
   const isDark = resolvedTheme === 'dark';
 
@@ -41,6 +46,8 @@ export default function Dzikir() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [savedIds, setSavedIds] = useState<Record<string, boolean>>({});
+  const [activeFilter, setActiveFilter] = useState<'all' | 'saved' | string>('all');
 
   const theme = useMemo(
     () => ({
@@ -68,7 +75,10 @@ export default function Dzikir() {
 
     const loadDzikir = async () => {
       try {
-        const response = await fetch('https://muslim-api-three.vercel.app/v1/dzikir');
+        const [response, saved] = await Promise.all([
+          fetch('https://muslim-api-three.vercel.app/v1/dzikir'),
+          getDzikirSavedIds(),
+        ]);
         const result = await response.json();
         const rawList: DzikirApiItem[] = Array.isArray(result)
           ? result
@@ -92,6 +102,12 @@ export default function Dzikir() {
 
         if (!mounted) return;
         setData(normalized);
+        setSavedIds(
+          saved.reduce<Record<string, boolean>>((acc, id) => {
+            acc[id] = true;
+            return acc;
+          }, {})
+        );
       } catch (error) {
         console.error(error);
         if (mounted) setData([]);
@@ -107,23 +123,56 @@ export default function Dzikir() {
     };
   }, []);
 
+  const typeFilters = useMemo(
+    () =>
+      Array.from(new Set(data.map((item) => item.type.toLowerCase().trim()).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [data]
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return data;
 
-    return data.filter(
-      (item) =>
+    return data.filter((item) => {
+      const matchQuery =
+        !q ||
         item.title.toLowerCase().includes(q) ||
         item.translation.toLowerCase().includes(q) ||
         item.latin.toLowerCase().includes(q) ||
         item.arabic.toLowerCase().includes(q) ||
-        item.type.toLowerCase().includes(q)
-    );
-  }, [data, query]);
+        item.type.toLowerCase().includes(q);
+
+      const matchFilter =
+        activeFilter === 'all'
+          ? true
+          : activeFilter === 'saved'
+            ? Boolean(savedIds[item.id])
+            : item.type.toLowerCase() === activeFilter;
+
+      return matchQuery && matchFilter;
+    });
+  }, [data, query, activeFilter, savedIds]);
 
   const toggleExpand = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleSave = async (id: string) => {
+    const result = await toggleDzikirSavedId(id);
+    setSavedIds(
+      result.ids.reduce<Record<string, boolean>>((acc, itemId) => {
+        acc[itemId] = true;
+        return acc;
+      }, {})
+    );
+    const selected = data.find((item) => item.id === id);
+    showSaveFeedback({
+      saved: result.saved,
+      label: selected?.title ?? 'Dzikir',
+      entity: 'Dzikir',
+    });
   };
 
   if (loading) {
@@ -137,6 +186,14 @@ export default function Dzikir() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+      <View style={styles.topBarWrap}>
+        <Pressable hitSlop={10} onPress={() => router.back()} style={[styles.backBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+        </Pressable>
+        <Text style={[styles.topBarTitle, { color: theme.text }]}>Dzikir</Text>
+        <View style={styles.topBarSpacer} />
+      </View>
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -145,8 +202,7 @@ export default function Dzikir() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.headerWrap}>
-            <Text style={[styles.pageTitle, { color: theme.text }]}>Dzikir</Text>
-            <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Sekarang sudah sinkron dengan API terbaru + animasi expand yang halus.</Text>
+            <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Gunakan filter untuk pilih kategori, lalu simpan dzikir favoritmu.</Text>
 
             <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
               <Ionicons name="search-outline" size={18} color={theme.muted} />
@@ -158,6 +214,27 @@ export default function Dzikir() {
                 style={[styles.searchInput, { color: theme.text }]}
               />
             </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              <Pressable
+                style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]}
+                onPress={() => setActiveFilter('all')}>
+                <Text style={[styles.filterChipText, activeFilter === 'all' && styles.filterChipTextActive]}>Semua</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.filterChip, activeFilter === 'saved' && styles.filterChipActive]}
+                onPress={() => setActiveFilter('saved')}>
+                <Text style={[styles.filterChipText, activeFilter === 'saved' && styles.filterChipTextActive]}>Tersimpan</Text>
+              </Pressable>
+              {typeFilters.map((type) => {
+                const selected = activeFilter === type;
+                return (
+                  <Pressable key={type} style={[styles.filterChip, selected && styles.filterChipActive]} onPress={() => setActiveFilter(type)}>
+                    <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         }
         renderItem={({ item, index }) => {
@@ -175,7 +252,21 @@ export default function Dzikir() {
                   <View style={[styles.typeChip, { backgroundColor: theme.chip }]}> 
                     <Text style={[styles.typeChipText, { color: theme.gold }]}>{item.type.toUpperCase()}</Text>
                   </View>
-                  <Text style={[styles.repeatText, { color: theme.muted }]}>Ulang: {item.repeat}</Text>
+                  <View style={styles.cardTopRight}>
+                    <Text style={[styles.repeatText, { color: theme.muted }]}>Ulang: {item.repeat}</Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void toggleSave(item.id);
+                      }}>
+                      <Ionicons
+                        name={savedIds[item.id] ? 'bookmark' : 'bookmark-outline'}
+                        size={18}
+                        color={savedIds[item.id] ? theme.gold : theme.muted}
+                      />
+                    </Pressable>
+                  </View>
                 </View>
 
                 <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
@@ -219,16 +310,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  headerWrap: {
+  topBarWrap: {
+    minHeight: 50,
+    paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 14,
-    gap: 10,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  pageTitle: {
-    fontSize: 30,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    fontSize: 18,
     fontWeight: '800',
     color: '#1C1408',
     fontFamily: 'serif',
+  },
+  topBarSpacer: {
+    width: 38,
+    height: 38,
+  },
+  headerWrap: {
+    paddingTop: 4,
+    paddingBottom: 14,
+    gap: 10,
   },
   pageSubtitle: {
     fontSize: 13,
@@ -250,6 +362,29 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#3D2108',
+  },
+  filterRow: {
+    gap: 8,
+  },
+  filterChip: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5D5BA',
+    backgroundColor: '#FFF9ED',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  filterChipActive: {
+    backgroundColor: '#C68B2F',
+    borderColor: '#C68B2F',
+  },
+  filterChipText: {
+    color: '#7E6446',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterChipTextActive: {
+    color: '#FFF',
   },
   card: {
     backgroundColor: '#FFFDF5',
@@ -281,6 +416,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#8A7255',
+  },
+  cardTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   cardTitle: {
     fontSize: 15,

@@ -18,15 +18,20 @@ const ThemePreferenceContext = createContext<ThemePreferenceContextValue | null>
 
 export function ThemePreferenceProvider({ children }: { children: React.ReactNode }) {
   const deviceScheme = useColorScheme();
-  const [preference, setPreferenceState] = useState<ThemePreference>('system');
+  const [preference, setPreferenceState] = useState<ThemePreference>('light');
+  const [hasLoadedPreference, setHasLoadedPreference] = useState(false);
 
   useEffect(() => {
     let alive = true;
     const loadPreference = async () => {
-      const saved = await AsyncStorage.getItem(THEME_PREF_KEY);
-      if (!alive) return;
-      if (saved === 'system' || saved === 'light' || saved === 'dark') {
-        setPreferenceState(saved);
+      try {
+        const saved = await AsyncStorage.getItem(THEME_PREF_KEY);
+        if (!alive) return;
+        if (saved === 'system' || saved === 'light' || saved === 'dark') {
+          setPreferenceState(saved);
+        }
+      } finally {
+        if (alive) setHasLoadedPreference(true);
       }
     };
     void loadPreference();
@@ -47,6 +52,10 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
     () => ({ preference, resolvedTheme, setPreference }),
     [preference, resolvedTheme]
   );
+
+  if (!hasLoadedPreference) {
+    return null;
+  }
 
   return <ThemePreferenceContext.Provider value={value}>{children}</ThemePreferenceContext.Provider>;
 }
