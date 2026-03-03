@@ -1,95 +1,143 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import React from 'react';
-import { StyleSheet, View, Text, Platform, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { useThemePreference } from '@/contexts/theme-preference';
 
-// ─── KONSTANTA WARNA (TEMA LU) ────────────────────────────────────────────────
-const COLORS = {
-  bgTab: '#FFF7EA',
-  primary: '#C68B2F',
-  inactiveIcon: '#9A8465', 
-  activeText: '#7A4B16',   
-  inactiveText: '#A38D70', 
-  border: '#F0DEBF',
-  shadow: '#B57D2D',
-  white: '#FFFFFF',
+type TabColors = {
+  bgTab: string;
+  primary: string;
+  inactiveIcon: string;
+  activeText: string;
+  inactiveText: string;
+  border: string;
+  shadow: string;
+  white: string;
+  aiFocused: string;
 };
 
-// ─── KOMPONEN ICON SAMPING (CLEAN STYLE) ──────────────────────────────────────
-function TabIcon({ focused, icon }: { focused: boolean; icon: any }) {
+function TabIcon({
+  focused,
+  icon,
+  colors,
+}: {
+  focused: boolean;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  colors: TabColors;
+}) {
   return (
     <View style={styles.iconTabItem}>
-      <MaterialCommunityIcons 
-        size={24} 
-        name={icon} 
-        color={focused ? COLORS.primary : COLORS.inactiveIcon} 
-      />
+      <MaterialCommunityIcons size={24} name={icon} color={focused ? colors.primary : colors.inactiveIcon} />
     </View>
   );
 }
 
-// ─── KOMPONEN CUSTOM TOMBOL AI (FLOATING & STABIL) ─────────────────────────────
-function CustomAiTabBarButton({ onPress, accessibilityState }: any) {
-  // FIX CRASH DI SINI: Pakai tanda tanya (?) biar gak crash pas undefined
-  const focused = accessibilityState?.selected ?? false; 
-  
+function CustomAiTabBarButton({
+  onPress,
+  accessibilityState,
+  colors,
+}: {
+  onPress?: () => void;
+  accessibilityState?: { selected?: boolean };
+  colors: TabColors;
+}) {
+  const focused = accessibilityState?.selected ?? false;
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={onPress}
-      style={styles.aiButtonContainer}
-    >
+    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.aiButtonContainer}>
       <View style={styles.aiOuter}>
-        <View style={[styles.aiButton, focused && styles.aiButtonFocused]}>
-          <MaterialCommunityIcons name="robot-outline" size={28} color={COLORS.white} />
+        <View
+          style={[
+            styles.aiButton,
+            {
+              backgroundColor: colors.primary,
+              borderColor: colors.bgTab,
+              shadowColor: colors.primary,
+            },
+            focused && { backgroundColor: colors.aiFocused, transform: [{ scale: 1.05 }] },
+          ]}>
+          <MaterialCommunityIcons name="robot-outline" size={28} color={colors.white} />
         </View>
-        <Text style={[styles.label, styles.aiLabel, focused && styles.aiLabelFocused]}>
-          AI Chat
-        </Text>
+        <Text style={[styles.label, { color: focused ? colors.activeText : colors.inactiveText }]}>AI Chat</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
-// ─── LAYOUT UTAMA ─────────────────────────────────────────────────────────────
 export default function TabLayout() {
+  const { resolvedTheme } = useThemePreference();
+  const isDark = resolvedTheme === 'dark';
+
+  const colors = useMemo<TabColors>(
+    () =>
+      isDark
+        ? {
+            bgTab: '#1E160E',
+            primary: '#C68B2F',
+            inactiveIcon: '#A58C6E',
+            activeText: '#E8C48A',
+            inactiveText: '#9D8568',
+            border: '#4E3A23',
+            shadow: '#000000',
+            white: '#FFFFFF',
+            aiFocused: '#AE742B',
+          }
+        : {
+            bgTab: '#FFF7EA',
+            primary: '#C68B2F',
+            inactiveIcon: '#9A8465',
+            activeText: '#7A4B16',
+            inactiveText: '#A38D70',
+            border: '#F0DEBF',
+            shadow: '#B57D2D',
+            white: '#FFFFFF',
+            aiFocused: '#B57D2D',
+          },
+    [isDark]
+  );
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarButton: HapticTab, 
+        tabBarButton: HapticTab,
         tabBarShowLabel: true,
-        tabBarActiveTintColor: COLORS.activeText,
-        tabBarInactiveTintColor: COLORS.inactiveText,
-        
-        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.activeText,
+        tabBarInactiveTintColor: colors.inactiveText,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            backgroundColor: colors.bgTab,
+            borderColor: colors.border,
+            shadowColor: colors.shadow,
+            shadowOpacity: isDark ? 0.35 : 0.12,
+          },
+        ],
         tabBarLabelStyle: styles.label,
         tabBarItemStyle: styles.tabItem,
       }}>
-      
       <Tabs.Screen
         name="Home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="home-variant-outline" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="home-variant-outline" colors={colors} />,
         }}
       />
-      
+
       <Tabs.Screen
         name="Quran"
         options={{
           title: 'Quran',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="book-open-page-variant" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="book-open-page-variant" colors={colors} />,
         }}
       />
 
-      {/* TAB KHUSUS AI - Kita custom total buttonnya */}
       <Tabs.Screen
         name="ai_muslim"
         options={{
-          tabBarButton: (props) => <CustomAiTabBarButton {...props} />,
+          tabBarButton: (props) => <CustomAiTabBarButton {...props} colors={colors} />,
         }}
       />
 
@@ -97,7 +145,7 @@ export default function TabLayout() {
         name="artikel"
         options={{
           title: 'Artikel',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="text-box-outline" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="text-box-outline" colors={colors} />,
         }}
       />
 
@@ -105,97 +153,65 @@ export default function TabLayout() {
         name="setting"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="cog-outline" />,
+          tabBarIcon: ({ focused }) => <TabIcon focused={focused} icon="cog-outline" colors={colors} />,
         }}
       />
     </Tabs>
   );
 }
 
-// ─── STYLES ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: Platform.OS === 'ios' ? 24 : 16, 
-    height: 72, 
-    backgroundColor: COLORS.bgTab,
-    borderRadius: 24,
-    borderTopWidth: 0, 
+    left: 20,
+    right: 20,
+    bottom: Platform.OS === 'ios' ? 24 : 16,
+    height: 72,
+    borderRadius: 26,
+    borderTopWidth: 0,
     borderWidth: 1.5,
-    borderColor: COLORS.border,
-    
-    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 8,
-    
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
   },
-  
   tabItem: {
     paddingTop: 8,
     paddingBottom: 4,
     height: 72,
   },
-  
   iconTabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 32, 
+    height: 32,
   },
-  
   label: {
     fontSize: 10,
     fontWeight: '700',
-    marginTop: 2, 
+    marginTop: 2,
   },
-
   aiButtonContainer: {
-    flex: 1, 
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 72, 
+    height: 72,
   },
-  
   aiOuter: {
     position: 'absolute',
-    top: -24, 
+    top: -26,
     alignItems: 'center',
-    width: 70, 
+    width: 70,
   },
-  
   aiButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     borderWidth: 4,
-    borderColor: COLORS.bgTab, 
     justifyContent: 'center',
     alignItems: 'center',
-    
     elevation: 10,
-    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-  },
-  aiButtonFocused: {
-    backgroundColor: '#B57D2D', 
-    transform: [{ scale: 1.05 }], 
-  },
-  
-  aiLabel: {
-    color: COLORS.inactiveText, 
-    fontSize: 10,
-    fontWeight: '800',
-    marginTop: 4, 
-  },
-  aiLabelFocused: {
-    color: COLORS.activeText, 
   },
 });

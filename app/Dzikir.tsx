@@ -3,30 +3,45 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  LayoutAnimation,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemePreference } from '@/contexts/theme-preference';
 
+type DzikirApiItem = {
+  type?: string;
+  arab?: string;
+  indo?: string;
+  ulang?: string;
+};
+
 type DzikirItem = {
-  id?: number;
+  id: string;
   title: string;
   arabic: string;
   latin: string;
   translation: string;
+  repeat: string;
+  type: string;
 };
 
 export default function Dzikir() {
   const { resolvedTheme } = useThemePreference();
   const isDark = resolvedTheme === 'dark';
+
   const [data, setData] = useState<DzikirItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
   const theme = useMemo(
     () => ({
       bg: isDark ? '#1A130B' : '#F7F1E8',
@@ -37,21 +52,59 @@ export default function Dzikir() {
       pressed: isDark ? '#352818' : '#FDF4E4',
       border: isDark ? '#4A3825' : '#EADBC0',
       gold: '#C68B2F',
+      chip: isDark ? 'rgba(198,139,47,0.22)' : 'rgba(198,139,47,0.12)',
     }),
     [isDark]
   );
 
   useEffect(() => {
-    fetch('https://muslim-api-three.vercel.app/v1/dzikir')
-      .then((response) => response.json())
-      .then((result) => {
-        setData(Array.isArray(result) ? result : []);
-        setLoading(false);
-      })
-      .catch((error) => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadDzikir = async () => {
+      try {
+        const response = await fetch('https://muslim-api-three.vercel.app/v1/dzikir');
+        const result = await response.json();
+        const rawList: DzikirApiItem[] = Array.isArray(result)
+          ? result
+          : Array.isArray(result?.data)
+            ? result.data
+            : [];
+
+        const normalized: DzikirItem[] = rawList.map((item, index) => {
+          const type = item.type?.trim() || 'umum';
+          const title = `Dzikir ${type.charAt(0).toUpperCase()}${type.slice(1)} #${index + 1}`;
+          return {
+            id: `${type}-${index + 1}`,
+            title,
+            arabic: item.arab?.trim() || '-',
+            latin: item.arab?.trim() || '-',
+            translation: item.indo?.trim() || '-',
+            repeat: item.ulang?.trim() || '-',
+            type,
+          };
+        });
+
+        if (!mounted) return;
+        setData(normalized);
+      } catch (error) {
         console.error(error);
-        setLoading(false);
-      });
+        if (mounted) setData([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void loadDzikir();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -63,9 +116,15 @@ export default function Dzikir() {
         item.title.toLowerCase().includes(q) ||
         item.translation.toLowerCase().includes(q) ||
         item.latin.toLowerCase().includes(q) ||
-        item.arabic.includes(q)
+        item.arabic.toLowerCase().includes(q) ||
+        item.type.toLowerCase().includes(q)
     );
   }, [data, query]);
+
+  const toggleExpand = (id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   if (loading) {
     return (
@@ -80,15 +139,16 @@ export default function Dzikir() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
       <FlatList
         data={filtered}
-        keyExtractor={(item, index) => String(item.id ?? index)}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.headerWrap}>
             <Text style={[styles.pageTitle, { color: theme.text }]}>Dzikir</Text>
-            <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Baca dzikir harian dengan tampilan yang lebih nyaman.</Text>
+            <Text style={[styles.pageSubtitle, { color: theme.muted }]}>Sekarang sudah sinkron dengan API terbaru + animasi expand yang halus.</Text>
 
-            <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
               <Ionicons name="search-outline" size={18} color={theme.muted} />
               <TextInput
                 value={query}
@@ -101,29 +161,35 @@ export default function Dzikir() {
           </View>
         }
         renderItem={({ item, index }) => {
-          const isExpanded = Boolean(expanded[index]);
+          const isExpanded = Boolean(expanded[item.id]);
           return (
-            <Pressable
-              style={({ pressed }) => [
-                styles.card,
-                { backgroundColor: theme.surface, borderColor: theme.border },
-                pressed && [styles.cardPressed, { backgroundColor: theme.pressed }],
-              ]}
-              onPress={() => {
-                setExpanded((prev) => ({ ...prev, [index]: !prev[index] }));
-              }}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-              <Text style={[styles.arabic, { color: theme.text }]}>{item.arabic}</Text>
-              <Text style={[styles.latin, { color: theme.muted }]} numberOfLines={isExpanded ? undefined : 2}>{item.latin}</Text>
-              <Text style={[styles.translation, { color: theme.body }]} numberOfLines={isExpanded ? undefined : 3}>
-                {item.translation}
-              </Text>
+            <Animated.View entering={FadeInDown.duration(320).delay(Math.min(index * 22, 260))}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.card,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  pressed && [styles.cardPressed, { backgroundColor: theme.pressed }],
+                ]}
+                onPress={() => toggleExpand(item.id)}>
+                <View style={styles.cardTopRow}>
+                  <View style={[styles.typeChip, { backgroundColor: theme.chip }]}> 
+                    <Text style={[styles.typeChipText, { color: theme.gold }]}>{item.type.toUpperCase()}</Text>
+                  </View>
+                  <Text style={[styles.repeatText, { color: theme.muted }]}>Ulang: {item.repeat}</Text>
+                </View>
 
-              <View style={styles.expandRow}>
-                <Text style={[styles.expandText, { color: theme.gold }]}>{isExpanded ? 'Ringkas' : 'Lihat lengkap'}</Text>
-                <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={theme.gold} />
-              </View>
-            </Pressable>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+                <Text style={[styles.arabic, { color: theme.text }]} numberOfLines={isExpanded ? undefined : 2}>{item.arabic}</Text>
+                <Text style={[styles.translation, { color: theme.body }]} numberOfLines={isExpanded ? undefined : 4}>
+                  {item.translation}
+                </Text>
+
+                <View style={styles.expandRow}>
+                  <Text style={[styles.expandText, { color: theme.gold }]}>{isExpanded ? 'Ringkas' : 'Lihat lengkap'}</Text>
+                  <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={theme.gold} />
+                </View>
+              </Pressable>
+            </Animated.View>
           );
         }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -195,26 +261,40 @@ const styles = StyleSheet.create({
   cardPressed: {
     backgroundColor: '#FDF4E4',
   },
+  cardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  typeChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  typeChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  repeatText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8A7255',
+  },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#1E1508',
     fontWeight: '700',
     marginBottom: 8,
   },
   arabic: {
-    fontSize: 30,
+    fontSize: 28,
     textAlign: 'right',
     color: '#1C1408',
     fontFamily: 'serif',
-    lineHeight: 50,
+    lineHeight: 46,
     marginBottom: 8,
-  },
-  latin: {
-    fontSize: 14,
-    color: '#7E6446',
-    fontStyle: 'italic',
-    lineHeight: 22,
-    marginBottom: 6,
   },
   translation: {
     fontSize: 14,

@@ -12,12 +12,14 @@ import {
   PanResponder,
   Pressable,
   RefreshControl,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useThemePreference } from '@/contexts/theme-preference';
 import {
   getAyahBookmarks,
   getSurahBookmarks,
@@ -66,6 +68,8 @@ const BASMALAH_TEXT = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ ال
 export default function Detail_surat() {
   const { nomor, ayah } = useLocalSearchParams<{ nomor: string; ayah?: string }>();
   const router = useRouter();
+  const { resolvedTheme } = useThemePreference();
+  const isDark = resolvedTheme === 'dark';
 
   const initialSurah = Number(nomor) || 1;
 
@@ -77,6 +81,7 @@ export default function Detail_surat() {
   const [selectedReciterId, setSelectedReciterId] = useState<string | null>(null);
   const [loadingReciters, setLoadingReciters] = useState(false);
   const [showReciterModal, setShowReciterModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
@@ -89,6 +94,13 @@ export default function Detail_surat() {
   const [surahBookmarked, setSurahBookmarked] = useState(false);
   const [swipeNotice, setSwipeNotice] = useState<string | null>(null);
   const [isAudioBusy, setIsAudioBusy] = useState(false);
+  const [isPlayerVisible, setIsPlayerVisible] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(true);
+  const [autoScrollPlaying, setAutoScrollPlaying] = useState(true);
+  const [enableSwipeHaptics, setEnableSwipeHaptics] = useState(true);
+  const [arabicFontSize, setArabicFontSize] = useState(32);
+  const [translationFontSize, setTranslationFontSize] = useState(15);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const flatListRef = useRef<FlatList<Ayat> | null>(null);
@@ -98,6 +110,38 @@ export default function Detail_surat() {
   const selectedReciterRef = useRef<string | null>(null);
   const loopModeRef = useRef<LoopMode>('off');
   const swipeNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const theme = useMemo(
+    () =>
+      isDark
+        ? {
+            bg: '#15100A',
+            surface: '#22180F',
+            softSurface: '#2D2014',
+            border: '#4D3923',
+            text: '#F3E4CF',
+            muted: '#BEA486',
+            gold: '#C68B2F',
+            goldSoft: '#A96F30',
+            activeBg: '#3A2814',
+            activeBorder: '#6A4B25',
+            overlay: 'rgba(0, 0, 0, 0.5)',
+          }
+        : {
+            bg: '#FCF8F1',
+            surface: '#FFF9ED',
+            softSurface: '#FFF4DE',
+            border: '#EADBC0',
+            text: '#2A1F12',
+            muted: '#8A7255',
+            gold: '#B06D1B',
+            goldSoft: '#B77836',
+            activeBg: '#FFF4DE',
+            activeBorder: '#E3CDAA',
+            overlay: 'rgba(29, 20, 11, 0.28)',
+          },
+    [isDark]
+  );
 
   useEffect(() => {
     selectedReciterRef.current = selectedReciterId;
@@ -120,6 +164,8 @@ export default function Detail_surat() {
       setSwipeNotice(null);
     }, 900);
   };
+
+  const clampFont = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
   const scrollToAyah = useCallback((surahNo: number, ayahNo: number, animated = true) => {
     if (!data || data.nomor !== surahNo) return;
@@ -192,6 +238,7 @@ export default function Detail_surat() {
     setIsPlaying(false);
     setPositionMillis(0);
     setDurationMillis(0);
+    setIsPlayerVisible(false);
   };
 
   const moveToSurah = async (surahNo: number) => {
@@ -204,6 +251,7 @@ export default function Detail_surat() {
 
   const playSpecificAyah = async (surahNo: number, ayahNo: number) => {
     const verseKey = getVerseKey(surahNo, ayahNo);
+    setIsPlayerVisible(true);
     setPlayingAyahKey(verseKey);
     setIsPlaying(true);
     setIsAudioBusy(true);
@@ -251,7 +299,9 @@ export default function Detail_surat() {
       playingContextRef.current = { surahNo: targetSurah.nomor, ayahNo: targetAyah };
       setPlayingAyahKey(getVerseKey(targetSurah.nomor, targetAyah));
       setIsPlaying(true);
-      scrollToAyah(targetSurah.nomor, targetAyah);
+      if (autoScrollPlaying) {
+        scrollToAyah(targetSurah.nomor, targetAyah);
+      }
       warmAudioWindow(targetSurah.nomor, targetAyah);
     } catch (error) {
       console.error('Failed to play ayah:', error);
@@ -381,14 +431,18 @@ export default function Detail_surat() {
       await playSpecificAyah(target, 1);
       const targetDetail = await ensureSurahDetail(target);
       showSwipeChangeNotice(`Surat ${targetDetail.nomor} · ${targetDetail.nama_latin}`);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (enableSwipeHaptics) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
       return;
     }
 
     try {
       const targetDetail = await moveToSurah(target);
       showSwipeChangeNotice(`Surat ${targetDetail.nomor} · ${targetDetail.nama_latin}`);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (enableSwipeHaptics) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
     } catch (error) {
       console.error('Failed to load surah:', error);
       Alert.alert('Gagal memuat surat', 'Coba lagi beberapa saat.');
@@ -631,9 +685,10 @@ export default function Detail_surat() {
     const current = playingContextRef.current;
     if (!current || !data) return;
     if (data.nomor !== current.surahNo) return;
+    if (!autoScrollPlaying) return;
 
     scrollToAyah(current.surahNo, current.ayahNo);
-  }, [playingAyahKey, data, scrollToAyah]);
+  }, [playingAyahKey, data, scrollToAyah, autoScrollPlaying]);
 
   useEffect(() => {
     if (!data || !ayah) return;
@@ -649,28 +704,35 @@ export default function Detail_surat() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#B06D1B" />
+      <View style={[styles.center, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color={theme.gold} />
       </View>
     );
   }
 
   if (!data) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>Gagal memuat detail surat.</Text>
+      <View style={[styles.center, { backgroundColor: theme.bg }]}>
+        <Text style={[styles.errorText, { color: theme.text }]}>Gagal memuat detail surat.</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']} {...panResponder.panHandlers}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']} {...panResponder.panHandlers}>
       <FlatList
         ref={flatListRef}
         data={data.ayat}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: isPlayerVisible ? 230 : 90 }]}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+          const shouldShow = event.nativeEvent.contentOffset.y > 280;
+          if (shouldShow !== showScrollTop) {
+            setShowScrollTop(shouldShow);
+          }
+        }}
         onScrollToIndexFailed={({ index, averageItemLength }) => {
           flatListRef.current?.scrollToOffset({
             offset: Math.max(0, index * averageItemLength - 120),
@@ -685,28 +747,44 @@ export default function Detail_surat() {
           }, 200);
         }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshSurah()} tintColor="#B06D1B" />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshSurah()} tintColor={theme.gold} />
         }
         ListHeaderComponent={
           <View style={styles.headerWrap}>
             <View style={styles.topBar}>
-              <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
-                <Ionicons name="chevron-back" size={20} color="#2A1F12" />
+              <Pressable
+                onPress={() => router.back()}
+                hitSlop={10}
+                style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="chevron-back" size={20} color={theme.text} />
               </Pressable>
 
-              <Text style={styles.topTitle}>QURAN</Text>
+              <Text style={[styles.topTitle, { color: theme.text }]}>QURAN</Text>
 
               <View style={styles.topRightActions}>
-                <Pressable onPress={() => void toggleSurahBookmark()} hitSlop={10} style={styles.moreBtn}>
+                <Pressable
+                  onPress={() => setShowSettingsModal(true)}
+                  hitSlop={10}
+                  style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Ionicons name="options-outline" size={18} color={theme.text} />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void toggleSurahBookmark()}
+                  hitSlop={10}
+                  style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <Ionicons
                     name={surahBookmarked ? 'bookmark' : 'bookmark-outline'}
                     size={18}
-                    color={surahBookmarked ? '#B06D1B' : '#2A1F12'}
+                    color={surahBookmarked ? theme.gold : theme.text}
                   />
                 </Pressable>
 
-                <Pressable onPress={() => void refreshSurah()} hitSlop={10} style={styles.moreBtn}>
-                  <Ionicons name="refresh-outline" size={18} color="#2A1F12" />
+                <Pressable
+                  onPress={() => void refreshSurah()}
+                  hitSlop={10}
+                  style={[styles.moreBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Ionicons name="refresh-outline" size={18} color={theme.text} />
                 </Pressable>
               </View>
             </View>
@@ -715,17 +793,17 @@ export default function Detail_surat() {
               source={require('../assets/images/bg_detail_surat.png')}
               style={styles.surahCard}
               imageStyle={styles.surahCardImage}>
-              <Text style={styles.surahLatin} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              <Text style={[styles.surahLatin, { color: theme.gold }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                 {data.nama_latin}
               </Text>
-              <Text style={styles.surahMeta}>
+              <Text style={[styles.surahMeta, { color: theme.muted }]}>
                 {data.arti} - {data.jumlah_ayat} Ayahs
               </Text>
-              <Text style={styles.bismillah} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              <Text style={[styles.bismillah, { color: theme.muted }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {BASMALAH_TEXT}
               </Text>
             </ImageBackground>
-            <Text style={styles.swipeHint}>Geser kiri/kanan untuk pindah surat</Text>
+            <Text style={[styles.swipeHint, { color: theme.muted }]}>Geser kiri/kanan untuk pindah surat</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -734,50 +812,89 @@ export default function Detail_surat() {
           const isBookmarked = Boolean(bookmarks[verseKey]);
 
           return (
-            <View style={[styles.ayahItem, isCurrent && styles.ayahItemActive]}>
+            <View
+              style={[
+                styles.ayahItem,
+                { borderBottomColor: theme.border },
+                isCurrent && styles.ayahItemActive,
+                isCurrent && { backgroundColor: theme.activeBg, borderColor: theme.activeBorder, borderBottomColor: theme.activeBorder },
+              ]}>
               <View style={styles.rowTop}>
-                <Text style={[styles.ayahRef, isCurrent && styles.ayahRefActive]}>
+                <Text style={[styles.ayahRef, { color: theme.muted }, isCurrent && styles.ayahRefActive, isCurrent && { color: theme.gold }]}>
                   {data.nomor}:{item.nomor}
                 </Text>
                 <Pressable onPress={() => openAyahActions(item)} hitSlop={8}>
-                  <Ionicons name="ellipsis-horizontal" size={18} color="#98856C" />
+                  <Ionicons name="ellipsis-horizontal" size={18} color={theme.muted} />
                 </Pressable>
               </View>
 
-              <Text style={[styles.ayahArabic, isCurrent && styles.ayahArabicActive]}>{item.ar}</Text>
-              <Text style={[styles.ayahTranslation, isCurrent && styles.ayahTranslationActive]}>{item.idn}</Text>
+              <Text
+                style={[
+                  styles.ayahArabic,
+                  { color: theme.text, fontSize: arabicFontSize, lineHeight: Math.round(arabicFontSize * 1.62) },
+                  isCurrent && styles.ayahArabicActive,
+                  isCurrent && { color: theme.gold },
+                ]}>
+                {item.ar}
+              </Text>
+              {showTranslation ? (
+                <Text
+                  style={[
+                    styles.ayahTranslation,
+                    { color: theme.text, fontSize: translationFontSize, lineHeight: Math.round(translationFontSize * 1.55) },
+                    isCurrent && styles.ayahTranslationActive,
+                    isCurrent && { color: theme.muted },
+                  ]}>
+                  {item.idn}
+                </Text>
+              ) : null}
 
               <View style={styles.actionRow}>
                 <Pressable
-                  style={[styles.actionBtn, isCurrent && styles.actionBtnActive]}
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    isCurrent && styles.actionBtnActive,
+                    isCurrent && { backgroundColor: theme.softSurface, borderColor: theme.activeBorder },
+                  ]}
                   onPress={() => {
                     void togglePlayAyah(item);
                   }}>
                   <Ionicons
                     name={isCurrent && isPlaying ? 'pause-circle-outline' : 'play-circle-outline'}
                     size={19}
-                    color="#8A6A45"
+                    color={theme.muted}
                   />
                 </Pressable>
 
                 <Pressable
-                  style={[styles.actionBtn, isCurrent && styles.actionBtnActive]}
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    isCurrent && styles.actionBtnActive,
+                    isCurrent && { backgroundColor: theme.softSurface, borderColor: theme.activeBorder },
+                  ]}
                   onPress={() => {
                     void toggleBookmark(item);
                   }}>
                   <Ionicons
                     name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
                     size={18}
-                    color="#8A6A45"
+                    color={isBookmarked ? theme.gold : theme.muted}
                   />
                 </Pressable>
 
                 <Pressable
-                  style={[styles.actionBtn, isCurrent && styles.actionBtnActive]}
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    isCurrent && styles.actionBtnActive,
+                    isCurrent && { backgroundColor: theme.softSurface, borderColor: theme.activeBorder },
+                  ]}
                   onPress={() => {
                     void shareAyah(item);
                   }}>
-                  <MaterialCommunityIcons name="share-variant-outline" size={18} color="#8A6A45" />
+                  <MaterialCommunityIcons name="share-variant-outline" size={18} color={theme.muted} />
                 </Pressable>
               </View>
             </View>
@@ -786,15 +903,44 @@ export default function Detail_surat() {
       />
 
       {swipeNotice ? (
-        <View style={styles.swipeNotice}>
-          <Ionicons name="swap-horizontal" size={14} color="#8A5B28" />
-          <Text style={styles.swipeNoticeText}>{swipeNotice}</Text>
+        <View style={[styles.swipeNotice, { backgroundColor: theme.softSurface, borderColor: theme.activeBorder }]}>
+          <Ionicons name="swap-horizontal" size={14} color={theme.gold} />
+          <Text style={[styles.swipeNoticeText, { color: theme.gold }]}>{swipeNotice}</Text>
         </View>
       ) : null}
 
-      <View style={styles.playerCard}>
+      {showScrollTop ? (
+        <Pressable
+          style={[
+            styles.scrollTopBtn,
+            {
+              bottom: isPlayerVisible ? 262 : 94,
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+          ]}
+          onPress={() => {
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          }}>
+          <Ionicons name="arrow-up" size={18} color={theme.gold} />
+        </Pressable>
+      ) : null}
+
+      {!isPlayerVisible ? (
+        <Pressable
+          style={[styles.fullPlayBtn, { backgroundColor: theme.goldSoft, borderColor: theme.border }]}
+          onPress={() => {
+            void playSpecificAyah(data.nomor, 1);
+          }}>
+          <Ionicons name="play-circle-outline" size={18} color="#FFF9EE" />
+          <Text style={styles.fullPlayText}>Play Full Surah</Text>
+        </Pressable>
+      ) : null}
+
+      {isPlayerVisible ? (
+        <View style={[styles.playerCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <View style={styles.playerTopRow}>
-          <Text style={styles.playerTitle} numberOfLines={1}>
+          <Text style={[styles.playerTitle, { color: theme.text }]} numberOfLines={1}>
             {isAudioBusy
               ? 'Menyiapkan audio...'
               : playingAyahKey
@@ -802,53 +948,63 @@ export default function Detail_surat() {
               : 'Belum ada ayat diputar'}
           </Text>
           <Pressable style={styles.loopBtn} onPress={toggleLoopMode}>
-            <Ionicons name="repeat" size={16} color="#8A5B28" />
-            <Text style={styles.loopText}>{loopLabel}</Text>
+            <Ionicons name="repeat" size={16} color={theme.gold} />
+            <Text style={[styles.loopText, { color: theme.gold }]}>{loopLabel}</Text>
           </Pressable>
         </View>
 
-        <Pressable style={styles.playerReciterRow} onPress={() => setShowReciterModal(true)}>
-          <Text style={styles.playerReciterLabel}>Pembaca</Text>
+        <Pressable
+          style={[styles.playerReciterRow, { borderColor: theme.border, backgroundColor: theme.softSurface }]}
+          onPress={() => setShowReciterModal(true)}>
+          <Text style={[styles.playerReciterLabel, { color: theme.muted }]}>Pembaca</Text>
           <View style={styles.playerReciterValueWrap}>
             {loadingReciters ? (
-              <ActivityIndicator size="small" color="#8C6032" />
+              <ActivityIndicator size="small" color={theme.gold} />
             ) : (
-              <Text style={styles.playerReciterValue} numberOfLines={1}>
+              <Text style={[styles.playerReciterValue, { color: theme.text }]} numberOfLines={1}>
                 {selectedReciterName ?? 'Pilih reciter'}
               </Text>
             )}
-            <Ionicons name="chevron-down" size={14} color="#8C6032" />
+            <Ionicons name="chevron-down" size={14} color={theme.gold} />
           </View>
         </Pressable>
 
         <Pressable
-          style={styles.progressTrack}
+          style={[styles.progressTrack, { backgroundColor: theme.border }]}
           onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
           onPress={(e) => {
             const ratio = e.nativeEvent.locationX / progressBarWidth;
             void seekByRatio(ratio);
           }}>
-          <View style={[styles.progressFill, { width: `${durationMillis ? (positionMillis / durationMillis) * 100 : 0}%` }]} />
+          <View
+            style={[
+              styles.progressFill,
+              {
+                backgroundColor: theme.goldSoft,
+                width: `${durationMillis ? (positionMillis / durationMillis) * 100 : 0}%`,
+              },
+            ]}
+          />
         </Pressable>
 
         <View style={styles.timeRow}>
-          <Text style={styles.timeText}>{formatTime(positionMillis)}</Text>
-          <Text style={styles.timeText}>{formatTime(durationMillis)}</Text>
+          <Text style={[styles.timeText, { color: theme.muted }]}>{formatTime(positionMillis)}</Text>
+          <Text style={[styles.timeText, { color: theme.muted }]}>{formatTime(durationMillis)}</Text>
         </View>
 
         <View style={styles.mainControlsRow}>
           <Pressable style={styles.controlBtn} onPress={() => void jumpSurah(-1)}>
-            <Ionicons name="play-skip-back-circle-outline" size={22} color="#8A5B28" />
-            <Text style={styles.controlSubText}>Surat -</Text>
+            <Ionicons name="play-skip-back-circle-outline" size={22} color={theme.gold} />
+            <Text style={[styles.controlSubText, { color: theme.gold }]}>Surat -</Text>
           </Pressable>
 
           <Pressable style={styles.controlBtn} onPress={() => void playPreviousAyah()}>
-            <Ionicons name="play-back-outline" size={22} color="#8A5B28" />
-            <Text style={styles.controlSubText}>Ayat -</Text>
+            <Ionicons name="play-back-outline" size={22} color={theme.gold} />
+            <Text style={[styles.controlSubText, { color: theme.gold }]}>Ayat -</Text>
           </Pressable>
 
           <Pressable
-            style={[styles.playPauseBtn, !playingAyahKey && styles.playPauseBtnDisabled]}
+            style={[styles.playPauseBtn, { backgroundColor: theme.goldSoft }, !playingAyahKey && styles.playPauseBtnDisabled]}
             onPress={() => {
               if (isAudioBusy) return;
               if (!playingAyahKey) {
@@ -871,38 +1027,180 @@ export default function Detail_surat() {
           </Pressable>
 
           <Pressable style={styles.controlBtn} onPress={() => void playNextAyah()}>
-            <Ionicons name="play-forward-outline" size={22} color="#8A5B28" />
-            <Text style={styles.controlSubText}>Ayat +</Text>
+            <Ionicons name="play-forward-outline" size={22} color={theme.gold} />
+            <Text style={[styles.controlSubText, { color: theme.gold }]}>Ayat +</Text>
           </Pressable>
 
           <Pressable style={styles.controlBtn} onPress={() => void jumpSurah(1)}>
-            <Ionicons name="play-skip-forward-circle-outline" size={22} color="#8A5B28" />
-            <Text style={styles.controlSubText}>Surat +</Text>
+            <Ionicons name="play-skip-forward-circle-outline" size={22} color={theme.gold} />
+            <Text style={[styles.controlSubText, { color: theme.gold }]}>Surat +</Text>
           </Pressable>
         </View>
 
         <View style={styles.stopRow}>
           <Pressable
-            style={styles.seekBtn}
+            style={[styles.seekBtn, { borderColor: theme.border, backgroundColor: theme.softSurface }]}
             onPress={() => {
               void stopPlayback();
             }}>
-            <Ionicons name="stop-circle-outline" size={16} color="#8A5B28" />
-            <Text style={styles.seekText}>Stop</Text>
+            <Ionicons name="stop-circle-outline" size={16} color={theme.gold} />
+            <Text style={[styles.seekText, { color: theme.gold }]}>Stop</Text>
           </Pressable>
         </View>
-      </View>
+        </View>
+      ) : null}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={showSettingsModal}
+        onRequestClose={() => setShowSettingsModal(false)}>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSettingsModal(false)} />
+          <View style={[styles.modalCard, styles.settingsModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.settingsHeaderRow}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Pengaturan Detail Quran</Text>
+              <Pressable onPress={() => setShowSettingsModal(false)} hitSlop={8}>
+                <Ionicons name="close" size={18} color={theme.muted} />
+              </Pressable>
+            </View>
+            <View style={[styles.modalDivider, { backgroundColor: theme.border }]} />
+
+            <ScrollView style={styles.settingsScroll} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.settingsSectionTitle, { color: theme.muted }]}>Pembaca</Text>
+              <Pressable
+                style={[styles.settingsRow, { backgroundColor: theme.softSurface, borderColor: theme.border }]}
+                onPress={() => {
+                  setShowSettingsModal(false);
+                  setShowReciterModal(true);
+                }}>
+                <View style={styles.settingsTextWrap}>
+                  <Text style={[styles.settingsLabel, { color: theme.text }]}>Pilih reciter sebelum memutar</Text>
+                  <Text style={[styles.settingsValue, { color: theme.muted }]} numberOfLines={1}>
+                    {selectedReciterName ?? 'Belum dipilih'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.gold} />
+              </Pressable>
+
+              <Text style={[styles.settingsSectionTitle, { color: theme.muted }]}>Loop</Text>
+              <View style={styles.loopModeRow}>
+                {(['off', 'ayah', 'surah'] as LoopMode[]).map((mode) => {
+                  const active = loopMode === mode;
+                  const label = mode === 'off' ? 'Off' : mode === 'ayah' ? 'Ayat' : 'Surat';
+                  return (
+                    <Pressable
+                      key={mode}
+                      style={[
+                        styles.loopModeChip,
+                        {
+                          borderColor: active ? theme.gold : theme.border,
+                          backgroundColor: active ? theme.goldSoft : theme.softSurface,
+                        },
+                      ]}
+                      onPress={() => setLoopMode(mode)}>
+                      <Text style={[styles.loopModeChipText, { color: active ? '#FFF9EE' : theme.text }]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.settingsSectionTitle, { color: theme.muted }]}>Tampilan</Text>
+              <Pressable
+                style={[styles.settingsRow, { backgroundColor: theme.softSurface, borderColor: theme.border }]}
+                onPress={() => setShowTranslation((prev) => !prev)}>
+                <Text style={[styles.settingsLabel, { color: theme.text }]}>Tampilkan terjemahan ayat</Text>
+                <Ionicons
+                  name={showTranslation ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={18}
+                  color={showTranslation ? theme.gold : theme.muted}
+                />
+              </Pressable>
+
+              <Pressable
+                style={[styles.settingsRow, { backgroundColor: theme.softSurface, borderColor: theme.border }]}
+                onPress={() => setAutoScrollPlaying((prev) => !prev)}>
+                <Text style={[styles.settingsLabel, { color: theme.text }]}>Auto-scroll ke ayat yang diputar</Text>
+                <Ionicons
+                  name={autoScrollPlaying ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={18}
+                  color={autoScrollPlaying ? theme.gold : theme.muted}
+                />
+              </Pressable>
+
+              <Pressable
+                style={[styles.settingsRow, { backgroundColor: theme.softSurface, borderColor: theme.border }]}
+                onPress={() => setEnableSwipeHaptics((prev) => !prev)}>
+                <Text style={[styles.settingsLabel, { color: theme.text }]}>Getar saat swipe pindah surat</Text>
+                <Ionicons
+                  name={enableSwipeHaptics ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={18}
+                  color={enableSwipeHaptics ? theme.gold : theme.muted}
+                />
+              </Pressable>
+
+              <View style={[styles.fontRow, { backgroundColor: theme.softSurface, borderColor: theme.border }]}>
+                <Text style={[styles.settingsLabel, { color: theme.text }]}>Ukuran teks Arab</Text>
+                <View style={styles.fontControlWrap}>
+                  <Pressable
+                    style={[styles.fontBtn, { borderColor: theme.border }]}
+                    onPress={() => setArabicFontSize((prev) => clampFont(prev - 2, 26, 48))}>
+                    <Ionicons name="remove" size={16} color={theme.gold} />
+                  </Pressable>
+                  <Text style={[styles.fontValue, { color: theme.muted }]}>{arabicFontSize}</Text>
+                  <Pressable
+                    style={[styles.fontBtn, { borderColor: theme.border }]}
+                    onPress={() => setArabicFontSize((prev) => clampFont(prev + 2, 26, 48))}>
+                    <Ionicons name="add" size={16} color={theme.gold} />
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.fontRow, { backgroundColor: theme.softSurface, borderColor: theme.border }]}>
+                <Text style={[styles.settingsLabel, { color: theme.text }]}>Ukuran terjemahan</Text>
+                <View style={styles.fontControlWrap}>
+                  <Pressable
+                    style={[styles.fontBtn, { borderColor: theme.border }]}
+                    onPress={() => setTranslationFontSize((prev) => clampFont(prev - 1, 12, 22))}>
+                    <Ionicons name="remove" size={16} color={theme.gold} />
+                  </Pressable>
+                  <Text style={[styles.fontValue, { color: theme.muted }]}>{translationFontSize}</Text>
+                  <Pressable
+                    style={[styles.fontBtn, { borderColor: theme.border }]}
+                    onPress={() => setTranslationFontSize((prev) => clampFont(prev + 1, 12, 22))}>
+                    <Ionicons name="add" size={16} color={theme.gold} />
+                  </Pressable>
+                </View>
+              </View>
+
+              <Pressable
+                style={[styles.resetBtn, { backgroundColor: theme.goldSoft }]}
+                onPress={() => {
+                  setShowTranslation(true);
+                  setAutoScrollPlaying(true);
+                  setEnableSwipeHaptics(true);
+                  setArabicFontSize(32);
+                  setTranslationFontSize(15);
+                  setLoopMode('off');
+                }}>
+                <Ionicons name="refresh-outline" size={16} color="#FFF9EE" />
+                <Text style={styles.resetBtnText}>Reset ke default</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"
         transparent
         visible={showReciterModal}
         onRequestClose={() => setShowReciterModal(false)}>
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowReciterModal(false)} />
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Pilih Reciter</Text>
-            <View style={styles.modalDivider} />
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Pilih Reciter</Text>
+            <View style={[styles.modalDivider, { backgroundColor: theme.border }]} />
 
             <FlatList
               data={reciters}
@@ -912,20 +1210,26 @@ export default function Detail_surat() {
                 const active = item.id === selectedReciterId;
                 return (
                   <Pressable
-                    style={[styles.reciterItem, active && styles.reciterItemActive]}
+                    style={[styles.reciterItem, active && styles.reciterItemActive, active && { backgroundColor: theme.softSurface }]}
                     onPress={() => {
                       setSelectedReciterId(item.id);
                       setShowReciterModal(false);
                     }}>
-                    <Text style={[styles.reciterItemText, active && styles.reciterItemTextActive]}>
+                    <Text
+                      style={[
+                        styles.reciterItemText,
+                        { color: theme.muted },
+                        active && styles.reciterItemTextActive,
+                        active && { color: theme.gold },
+                      ]}>
                       {item.name}
                     </Text>
-                    {active ? <Ionicons name="checkmark" size={16} color="#9E6A2F" /> : null}
+                    {active ? <Ionicons name="checkmark" size={16} color={theme.gold} /> : null}
                   </Pressable>
                 );
               }}
               ListEmptyComponent={
-                <Text style={styles.modalEmptyText}>
+                <Text style={[styles.modalEmptyText, { color: theme.muted }]}>
                   {loadingReciters ? 'Memuat reciter...' : 'Reciter belum tersedia'}
                 </Text>
               }
@@ -1141,6 +1445,45 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     gap: 8,
   },
+  fullPlayBtn: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 18,
+    minHeight: 46,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+  },
+  fullPlayText: {
+    color: '#FFF9EE',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  scrollTopBtn: {
+    position: 'absolute',
+    right: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+  },
   playerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1290,6 +1633,110 @@ const styles = StyleSheet.create({
   },
   modalList: {
     minHeight: 140,
+  },
+  settingsModalCard: {
+    maxHeight: '84%',
+  },
+  settingsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  settingsScroll: {
+    maxHeight: 520,
+  },
+  settingsSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  settingsRow: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  settingsTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  settingsLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  settingsValue: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  loopModeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  loopModeChip: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loopModeChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  fontRow: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  fontControlWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fontBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fontValue: {
+    minWidth: 26,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  resetBtn: {
+    marginTop: 8,
+    marginBottom: 8,
+    minHeight: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  resetBtnText: {
+    color: '#FFF9EE',
+    fontSize: 12,
+    fontWeight: '700',
   },
   reciterItem: {
     minHeight: 42,

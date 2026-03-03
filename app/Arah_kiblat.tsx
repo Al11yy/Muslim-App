@@ -1,17 +1,124 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { Camera } from 'expo-camera'; // Kita pakai ini sekarang!
 import { useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 const QIBLA_URL = 'https://qiblafinder.withgoogle.com/';
 
+// User agent dibikin mirip Chrome mobile biar Google nge-load versi AR
+const MOBILE_USER_AGENT = Platform.select({
+  android:
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+  ios:
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+});
+
+// Script untuk ngebypass konfirmasi izin tambahan di dalam browser
+const BOOTSTRAP_PERMISSION_SCRIPT = `
+(() => {
+  try {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {},
+        () => {},
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    }
+  } catch (error) {}
+
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+        .then((stream) => {
+          stream.getTracks().forEach((track) => track.stop());
+        })
+        .catch((error) => {
+          window.ReactNativeWebView?.postMessage(
+            'media_error:' + (error?.message ?? 'unknown')
+          );
+        });
+    }
+  } catch (error) {}
+})();
+true;
+`;
+
+type PermissionState = 'checking' | 'granted' | 'denied';
+
+// ─── LOGIKA REQUEST IZIN EXPO WAY ───
+async function requestWebViewPermissions(): Promise<{ granted: boolean; message?: string }> {
+  // 1. Minta Izin Lokasi
+  const locationPermission = await Location.requestForegroundPermissionsAsync();
+  if (locationPermission.status !== 'granted') {
+    return {
+      granted: false,
+      message: 'Izin lokasi wajib diaktifkan agar arah kiblat akurat.',
+    };
+  }
+
+  // 2. Minta Izin Kamera pakai Expo Camera
+  const cameraPermission = await Camera.requestCameraPermissionsAsync();
+  if (cameraPermission.status !== 'granted') {
+    return {
+      granted: false,
+      message: !cameraPermission.canAskAgain
+        ? 'Izin kamera diblokir permanen. Aktifkan lagi lewat Pengaturan aplikasi.'
+        : 'Izin kamera wajib diberikan untuk fitur AR Kiblat.',
+    };
+  }
+
+  return { granted: true };
+}
+
+// ─── KOMPONEN UTAMA ───
 export default function ArahKiblat() {
   const router = useRouter();
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [permissionState, setPermissionState] = useState<PermissionState>('checking');
+  const [permissionMessage, setPermissionMessage] = useState('');
+  const [webHint, setWebHint] = useState('');
+
+  const ensurePermissions = useCallback(async () => {
+    setPermissionState('checking');
+    setPermissionMessage('');
+    setFailed(false);
+    setLoading(true);
+
+    try {
+      const result = await requestWebViewPermissions();
+      if (!result.granted) {
+        setPermissionState('denied');
+        setPermissionMessage(result.message ?? 'Izin belum aktif.');
+        setLoading(false);
+        return;
+      }
+
+      setPermissionState('granted');
+      setWebHint('');
+    } catch {
+      setPermissionState('denied');
+      setPermissionMessage('Gagal meminta izin kamera/lokasi.');
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void ensurePermissions();
+  }, [ensurePermissions]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -24,6 +131,11 @@ export default function ArahKiblat() {
 
         <Pressable
           onPress={() => {
+            if (permissionState !== 'granted') {
+              void ensurePermissions();
+              return;
+            }
+            setWebHint('');
             setFailed(false);
             setLoading(true);
             webRef.current?.reload();
@@ -35,47 +147,89 @@ export default function ArahKiblat() {
       </View>
 
       <View style={styles.webWrap}>
-        <WebView
-          ref={webRef}
-          source={{ uri: QIBLA_URL }}
-          style={styles.webview}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          geolocationEnabled
-          onLoadStart={() => {
-            setLoading(true);
-            setFailed(false);
-          }}
-          onLoadEnd={() => {
-            setLoading(false);
-          }}
-          onError={() => {
-            setLoading(false);
-            setFailed(true);
-          }}
-          startInLoadingState
-          renderLoading={() => (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#C68B2F" />
-              <Text style={styles.loadingText}>Memuat Qibla Finder...</Text>
-            </View>
-          )}
-        />
+        {permissionState === 'granted' ? (
+          <WebView
+            ref={webRef}
+            source={{ uri: QIBLA_URL }}
+            style={styles.webview}
+            originWhitelist={['*']}
+            userAgent={MOBILE_USER_AGENT}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            geolocationEnabled={true}
+            allowsInlineMediaPlayback={true}
+            allowsFullscreenVideo={true}
+            mediaPlaybackRequiresUserAction={false}
+            // INI PENTING BANGET BUAT ANDROID!
+            mediaCapturePermissionGrantType="grant" 
+            mixedContentMode="always"
+            injectedJavaScriptBeforeContentLoaded={BOOTSTRAP_PERMISSION_SCRIPT}
+            onMessage={(event) => {
+              const message = event.nativeEvent.data ?? '';
+              if (message.startsWith('media_error:')) {
+                setWebHint('Kamera ditolak oleh sistem WebView. Pastikan izin kamera aktif.');
+              }
+            }}
+            onLoadStart={() => {
+              setLoading(true);
+              setFailed(false);
+            }}
+            onLoadEnd={() => {
+              setLoading(false);
+            }}
+            onError={() => {
+              setLoading(false);
+              setFailed(true);
+            }}
+            startInLoadingState
+            renderLoading={() => (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color="#C68B2F" />
+                <Text style={styles.loadingText}>Memuat Qibla Finder...</Text>
+              </View>
+            )}
+          />
+        ) : null}
 
         {loading ? (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#C68B2F" />
-            <Text style={styles.loadingText}>Memuat Qibla Finder...</Text>
+            <Text style={styles.loadingText}>
+              {permissionState === 'checking' ? 'Memeriksa izin kamera & lokasi...' : 'Memuat Qibla Finder...'}
+            </Text>
+          </View>
+        ) : null}
+
+        {permissionState === 'denied' ? (
+          <View style={styles.errorOverlay}>
+            <Ionicons name="lock-closed-outline" size={28} color="#8A5B28" />
+            <Text style={styles.errorTitle}>Izin Belum Aktif</Text>
+            <Text style={styles.errorDesc}>{permissionMessage}</Text>
+            <View style={styles.rowAction}>
+              <Pressable style={styles.retryBtn} onPress={() => void ensurePermissions()}>
+                <Text style={styles.retryText}>Minta Izin</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.retryBtn, styles.secondaryBtn]}
+                onPress={() => void Linking.openSettings()}>
+                <Text style={[styles.retryText, styles.secondaryText]}>Pengaturan</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {webHint ? (
+          <View style={styles.hintBox}>
+            <Ionicons name="information-circle-outline" size={16} color="#7B5A2B" />
+            <Text style={styles.hintText}>{webHint}</Text>
           </View>
         ) : null}
 
         {failed ? (
           <View style={styles.errorOverlay}>
             <Ionicons name="warning-outline" size={28} color="#8A5B28" />
-            <Text style={styles.errorTitle}>Gagal memuat halaman kiblat</Text>
-            <Text style={styles.errorDesc}>Pastikan koneksi internet aktif, lalu coba muat ulang.</Text>
+            <Text style={styles.errorTitle}>Koneksi Terputus</Text>
+            <Text style={styles.errorDesc}>Gagal memuat halaman, pastikan internet aktif.</Text>
             <Pressable
               style={styles.retryBtn}
               onPress={() => {
@@ -92,6 +246,7 @@ export default function ArahKiblat() {
   );
 }
 
+// STYLES TETAP SAMA KAYA PUNYA LU KARENA UDAH CAKEP BANGET
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -184,5 +339,40 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  rowAction: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryBtn: {
+    backgroundColor: '#FFF6E6',
+    borderWidth: 1,
+    borderColor: '#E7D6B9',
+  },
+  secondaryText: {
+    color: '#8A5B28',
+  },
+  hintBox: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E7D6B9',
+    backgroundColor: '#FFF9ED',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hintText: {
+    flex: 1,
+    color: '#7B5A2B',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
   },
 });

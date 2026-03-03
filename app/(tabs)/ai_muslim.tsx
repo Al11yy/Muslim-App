@@ -1,8 +1,12 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -40,13 +44,17 @@ function getAiReply(input: string) {
 
 export default function AiMuslim() {
   const { resolvedTheme } = useThemePreference();
+  const tabBarHeight = useBottomTabBarHeight();
+  const listRef = useRef<FlatList<Message>>(null);
+
   const isDark = resolvedTheme === 'dark';
   const [input, setInput] = useState('');
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'Assalamu\'alaikum. Saya siap bantu pertanyaan seputar ibadah, doa, dan motivasi Islami.',
+      text: "Assalamu'alaikum. Saya siap bantu pertanyaan seputar ibadah, doa, dan motivasi Islami.",
     },
   ]);
 
@@ -65,24 +73,43 @@ export default function AiMuslim() {
     [isDark]
   );
 
+  const composerBottomOffset = useMemo(
+    () => tabBarHeight + (Platform.OS === 'ios' ? 32 : 24),
+    [tabBarHeight]
+  );
+
+  const listBottomPadding = useMemo(
+    () => (isComposerOpen ? composerBottomOffset + 162 : composerBottomOffset + 68),
+    [composerBottomOffset, isComposerOpen]
+  );
+
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    });
+  };
+
   const sendMessage = (rawText?: string) => {
     const text = (rawText ?? input).trim();
     if (!text) return;
 
+    const now = Date.now();
+
     const userMsg: Message = {
-      id: `${Date.now()}-u`,
+      id: `${now}-u`,
       role: 'user',
       text,
     };
 
     const aiMsg: Message = {
-      id: `${Date.now()}-a`,
+      id: `${now + 1}-a`,
       role: 'assistant',
       text: getAiReply(text),
     };
 
     setMessages((prev) => [...prev, userMsg, aiMsg]);
     setInput('');
+    scrollToBottom();
   };
 
   return (
@@ -95,61 +122,89 @@ export default function AiMuslim() {
         </View>
       </View>
 
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.chatContent}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const isUser = item.role === 'user';
-          return (
-            <View style={[styles.bubbleRow, isUser ? styles.bubbleRowRight : styles.bubbleRowLeft]}>
-              <View
-                style={[
-                  styles.bubble,
-                  isUser ? styles.userBubble : styles.aiBubble,
-                  !isUser && { backgroundColor: theme.surface, borderColor: theme.border },
-                ]}>
-                <Text style={[styles.bubbleText, !isUser && { color: theme.input }, isUser && styles.userBubbleText]}>
-                  {item.text}
-                </Text>
-              </View>
-            </View>
-          );
-        }}
-        ListHeaderComponent={
-          <View style={styles.promptsWrap}>
-            <Text style={[styles.sectionLabel, { color: theme.muted }]}>Pertanyaan Cepat</Text>
-            <View style={styles.promptRow}>
-              {QUICK_PROMPTS.map((prompt) => (
-                <Pressable
-                  key={prompt}
-                  style={[styles.promptChip, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                  onPress={() => sendMessage(prompt)}>
-                  <Text style={[styles.promptText, { color: theme.muted }]}>{prompt}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        }
-      />
+      <KeyboardAvoidingView style={styles.keyboardAvoid} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.chatRoot}>
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[styles.chatContent, { paddingBottom: listBottomPadding }]}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={scrollToBottom}
+            renderItem={({ item }) => {
+              const isUser = item.role === 'user';
+              return (
+                <View style={[styles.bubbleRow, isUser ? styles.bubbleRowRight : styles.bubbleRowLeft]}>
+                  <View
+                    style={[
+                      styles.bubble,
+                      isUser ? styles.userBubble : styles.aiBubble,
+                      !isUser && { backgroundColor: theme.surface, borderColor: theme.border },
+                    ]}>
+                    <Text style={[styles.bubbleText, !isUser && { color: theme.input }, isUser && styles.userBubbleText]}>
+                      {item.text}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }}
+          />
 
-      <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Tulis pertanyaanmu..."
-          placeholderTextColor={theme.muted}
-          style={[styles.input, { color: theme.input }]}
-          multiline
-        />
-        <Pressable
-          style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-          onPress={() => sendMessage()}
-          disabled={!canSend}>
-          <Ionicons name="send" size={16} color="#FFF" />
-        </Pressable>
-      </View>
+          {!isComposerOpen ? (
+            <Pressable
+              style={[styles.openComposerBtn, { bottom: composerBottomOffset, backgroundColor: theme.gold }]}
+              onPress={() => setIsComposerOpen(true)}>
+              <MaterialCommunityIcons name="message-text-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.openComposerText}>Mulai chat</Text>
+            </Pressable>
+          ) : (
+            <View
+              style={[
+                styles.composerWrapper,
+                {
+                  bottom: composerBottomOffset,
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}>
+              <View style={styles.promptsWrap}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promptScroller}>
+                  {QUICK_PROMPTS.map((prompt) => (
+                    <Pressable
+                      key={prompt}
+                      style={[styles.promptChip, { backgroundColor: theme.surfaceSoft, borderColor: theme.border }]}
+                      onPress={() => sendMessage(prompt)}>
+                      <Text style={[styles.promptText, { color: theme.muted }]}>{prompt}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={[styles.inputWrap, { backgroundColor: theme.surfaceSoft, borderColor: theme.border }]}>
+                <TextInput
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder="Tulis pertanyaanmu..."
+                  placeholderTextColor={theme.muted}
+                  style={[styles.input, { color: theme.input }]}
+                  multiline
+                />
+                <Pressable
+                  style={[styles.sendBtn, { backgroundColor: theme.gold }, !canSend && styles.sendBtnDisabled]}
+                  onPress={() => sendMessage()}
+                  disabled={!canSend}>
+                  <Ionicons name="send" size={16} color="#FFF" />
+                </Pressable>
+              </View>
+
+              <Pressable style={[styles.minimizeBtn, { borderTopColor: theme.border }]} onPress={() => setIsComposerOpen(false)}>
+                <Ionicons name="chevron-down" size={16} color={theme.muted} />
+                <Text style={[styles.minimizeText, { color: theme.muted }]}>Sembunyikan chat</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -158,6 +213,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F1E8',
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  chatRoot: {
+    flex: 1,
+    position: 'relative',
   },
   topBar: {
     paddingHorizontal: 16,
@@ -194,34 +256,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 8,
   },
-  promptsWrap: {
-    gap: 8,
-    marginBottom: 4,
-  },
-  sectionLabel: {
-    paddingHorizontal: 6,
-    color: '#8A7255',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  promptRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  promptChip: {
-    backgroundColor: '#FFFDF5',
-    borderWidth: 1,
-    borderColor: '#E9D8BD',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  promptText: {
-    color: '#6E573B',
-    fontSize: 12,
-    fontWeight: '600',
-  },
   bubbleRow: {
     flexDirection: 'row',
   },
@@ -253,12 +287,62 @@ const styles = StyleSheet.create({
   userBubbleText: {
     color: '#FFF',
   },
-  inputWrap: {
-    margin: 12,
+  openComposerBtn: {
+    position: 'absolute',
+    right: 14,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+  },
+  openComposerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  composerWrapper: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
     borderRadius: 16,
-    backgroundColor: '#FFFDF5',
     borderWidth: 1,
-    borderColor: '#E9D8BD',
+    overflow: 'hidden',
+    elevation: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+  },
+  promptsWrap: {
+    paddingVertical: 10,
+  },
+  promptScroller: {
+    paddingHorizontal: 10,
+    gap: 8,
+  },
+  promptChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  promptText: {
+    color: '#6E573B',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inputWrap: {
+    marginHorizontal: 10,
+    marginBottom: 8,
+    borderRadius: 16,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
@@ -281,5 +365,17 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.45,
+  },
+  minimizeBtn: {
+    borderTopWidth: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  minimizeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

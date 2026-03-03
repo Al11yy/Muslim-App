@@ -242,19 +242,6 @@ export default function Setting() {
         </View>
 
         <View style={dynamic.sectionCard}>
-          <Text style={dynamic.sectionTitle}>Task Selanjutnya</Text>
-          <View style={dynamic.todoBox}>
-            <MaterialCommunityIcons name="playlist-play" size={18} color={colors.accent} />
-            <View style={dynamic.todoBody}>
-              <Text style={dynamic.todoTitle}>Kontrol Murotal di Lockscreen</Text>
-              <Text style={dynamic.todoDesc}>
-                Rencana upgrade ke player background service (next/prev/stop dari lockscreen & notifikasi).
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={dynamic.sectionCard}>
           <Text style={dynamic.sectionTitle}>Lainnya</Text>
 
           <Pressable style={dynamic.linkRow}>
@@ -304,7 +291,7 @@ function getStyles(colors: {
     },
     content: {
       paddingHorizontal: 16,
-      paddingBottom: 28,
+      paddingBottom: 120,
       gap: 12,
     },
     header: {
