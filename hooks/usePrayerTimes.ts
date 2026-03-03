@@ -1,3 +1,4 @@
+import * as Location from 'expo-location';
 import { useEffect, useMemo, useState } from 'react';
 
 type PrayerItem = {
@@ -61,8 +62,45 @@ export function usePrayerTimes(): PrayerTimesState {
 
     const loadPrayerTimes = async () => {
       setLoading(true);
+
+      // ─── Try to get user location ────────────────────────────────
+      let lat: number | null = null;
+      let lon: number | null = null;
+      let detectedCity = DEFAULT_CITY;
+
       try {
-        const url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(DEFAULT_CITY)}&country=${encodeURIComponent(DEFAULT_COUNTRY)}&method=11`;
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          lat = loc.coords.latitude;
+          lon = loc.coords.longitude;
+
+          // Reverse geocode to get city name
+          const [geo] = await Location.reverseGeocodeAsync({
+            latitude: lat,
+            longitude: lon,
+          });
+          if (geo) {
+            detectedCity = geo.city || geo.subregion || geo.region || DEFAULT_CITY;
+          }
+        }
+      } catch {
+        // Location failed — fall through to city-based API
+      }
+
+      // ─── Fetch prayer times ──────────────────────────────────────
+      try {
+        let url: string;
+        if (lat !== null && lon !== null) {
+          // Use coordinates for accurate local prayer times
+          url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=11`;
+        } else {
+          // Fallback to city-based lookup
+          url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(DEFAULT_CITY)}&country=${encodeURIComponent(DEFAULT_COUNTRY)}&method=11`;
+        }
+
         const response = await fetch(url);
         const json = await response.json();
         const timings = json?.data?.timings;
@@ -78,7 +116,7 @@ export function usePrayerTimes(): PrayerTimesState {
         const valid = mapped.every((p) => /^\d{2}:\d{2}$/.test(p.time));
         if (alive) {
           setPrayers(valid ? mapped : FALLBACK_PRAYERS);
-          setCity(DEFAULT_CITY);
+          setCity(detectedCity);
         }
       } catch {
         if (alive) {
@@ -126,4 +164,3 @@ export function usePrayerTimes(): PrayerTimesState {
     loading,
   };
 }
-

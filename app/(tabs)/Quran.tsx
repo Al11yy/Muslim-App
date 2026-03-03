@@ -1,27 +1,27 @@
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { getSurahBookmarks, toggleSurahBookmarkStorage } from '@/lib/quran-bookmarks';
+import { showSaveFeedback } from '@/lib/save-feedback';
+import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  ImageBackground,
-  Modal,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ViewToken,
-  View,
+    ActivityIndicator,
+    FlatList,
+    Image,
+    ImageBackground,
+    Modal,
+    Pressable,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getSurahBookmarks, toggleSurahBookmarkStorage } from '@/lib/quran-bookmarks';
-import { showSaveFeedback } from '@/lib/save-feedback';
-import { useThemePreference } from '@/contexts/theme-preference';
-import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 
 // ─── 1. MAPPING DATA UNTUK FILTER JUZ & HALAMAN ──────────────────────────────
 const SURAH_TO_JUZ: Record<number, number> = {
@@ -75,8 +75,8 @@ const parseJuzHeader = (header: string) => {
 // ─── KOMPONEN UTAMA ──────────────────────────────────────────────────────────
 export default function Quran() {
   const router = useRouter(); 
-  const { resolvedTheme } = useThemePreference();
-  const isDark = resolvedTheme === 'dark';
+  const theme = useAppTheme();
+  const { isDark } = theme;
   const [data, setData] = useState<SurahListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,20 +89,6 @@ export default function Quran() {
   const flatListRef = useRef<FlatList<QuranListItem> | null>(null);
   const activeTabRef = useRef<FilterTab>('Juz');
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 35 });
-  const theme = useMemo(
-    () => ({
-      bg: isDark ? '#1A130B' : '#F7F1E8',
-      text: isDark ? '#F6ECDD' : '#1A1209',
-      muted: isDark ? '#CAB79C' : '#8A7255',
-      surface: isDark ? '#2A1F12' : '#FFFDF5',
-      softSurface: isDark ? '#332516' : 'rgba(255,255,255,0.7)',
-      border: isDark ? '#4A3825' : '#E5D3B8',
-      cardBorder: isDark ? '#4A3825' : '#EDDFC4',
-      overlay: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.08)',
-      gold: '#C68B2F',
-    }),
-    [isDark]
-  );
 
   // Load API 
   const load = async () => {

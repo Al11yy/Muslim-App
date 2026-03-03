@@ -212,6 +212,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="ai_muslim"
         options={{
+          tabBarStyle: { display: 'none' },
           tabBarButton: (props) => <CustomAiTabBarButton {...props} colors={colors} />,
         }}
       />

@@ -2,13 +2,14 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemePreference, useThemePreference } from '@/contexts/theme-preference';
-import { getHaditsSavedIds, getDzikirSavedIds, clearSavedContentIds } from '@/lib/content-bookmarks';
-import { getAyahBookmarks, getSurahBookmarks, AYAH_BOOKMARKS_KEY, SURAH_BOOKMARKS_KEY } from '@/lib/quran-bookmarks';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { clearSavedContentIds, getDzikirSavedIds, getHaditsSavedIds } from '@/lib/content-bookmarks';
+import { AYAH_BOOKMARKS_KEY, getAyahBookmarks, getSurahBookmarks, SURAH_BOOKMARKS_KEY } from '@/lib/quran-bookmarks';
 import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
 
 type AppSettings = {
@@ -48,7 +49,8 @@ const EMPTY_STATS: SavedStats = {
 export default function Setting() {
   const router = useRouter();
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
-  const { preference, setPreference, resolvedTheme } = useThemePreference();
+  const { preference, setPreference } = useThemePreference();
+  const appTheme = useAppTheme();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [savedStats, setSavedStats] = useState<SavedStats>(EMPTY_STATS);
   const [loadingStats, setLoadingStats] = useState(true);
@@ -161,55 +163,28 @@ export default function Setting() {
     );
   };
 
-  const colors = useMemo(
-    () =>
-      resolvedTheme === 'dark'
-        ? {
-            pageBg: '#14110D',
-            cardBg: '#211A13',
-            cardBorder: '#3A2E22',
-            textPrimary: '#F2E7D7',
-            textSecondary: '#BFA88C',
-            accent: '#D8A24A',
-            iconMuted: '#A38D70',
-            rowDivider: '#352A20',
-            switchTrackOn: '#6E532C',
-            switchTrackOff: '#4E4032',
-            switchThumbOn: '#D8A24A',
-            switchThumbOff: '#E2D3BF',
-            tabBg: '#2A2118',
-            tabActiveBg: '#D8A24A',
-            tabText: '#DCC8B0',
-            actionBg: '#2B2117',
-            actionText: '#F0DFC7',
-            dangerBg: '#4B251F',
-            dangerText: '#FFD5CE',
-            statPillBg: '#2F2419',
-          }
-        : {
-            pageBg: '#F7F1E8',
-            cardBg: '#FFFDF5',
-            cardBorder: '#EADBC0',
-            textPrimary: '#1C1408',
-            textSecondary: '#7E6446',
-            accent: '#C68B2F',
-            iconMuted: '#C6B29A',
-            rowDivider: '#EFE3D0',
-            switchTrackOn: '#DDBA82',
-            switchTrackOff: '#DCCBB0',
-            switchThumbOn: '#C68B2F',
-            switchThumbOff: '#F5EFE4',
-            tabBg: '#EFE3D0',
-            tabActiveBg: '#C68B2F',
-            tabText: '#7D664B',
-            actionBg: '#F8EEDA',
-            actionText: '#6F4D24',
-            dangerBg: '#FDE6E2',
-            dangerText: '#A33E31',
-            statPillBg: '#F5E9D1',
-          },
-    [resolvedTheme]
-  );
+  const colors = {
+    pageBg: appTheme.pageBg,
+    cardBg: appTheme.cardBg,
+    cardBorder: appTheme.cardBorder,
+    textPrimary: appTheme.textPrimary,
+    textSecondary: appTheme.textSecondary,
+    accent: appTheme.accent,
+    iconMuted: appTheme.iconMuted,
+    rowDivider: appTheme.rowDivider,
+    switchTrackOn: appTheme.switchTrackOn,
+    switchTrackOff: appTheme.switchTrackOff,
+    switchThumbOn: appTheme.switchThumbOn,
+    switchThumbOff: appTheme.switchThumbOff,
+    tabBg: appTheme.tabBg,
+    tabActiveBg: appTheme.tabActiveBg,
+    tabText: appTheme.tabText,
+    actionBg: appTheme.actionBg,
+    actionText: appTheme.actionText,
+    dangerBg: appTheme.dangerBg,
+    dangerText: appTheme.dangerText,
+    statPillBg: appTheme.statPillBg,
+  };
 
   const dynamic = getStyles(colors);
   const totalSaved = savedStats.surah + savedStats.ayah + savedStats.dzikir + savedStats.hadits;
@@ -248,7 +223,7 @@ export default function Setting() {
               </Pressable>
             ))}
           </View>
-          <Text style={dynamic.helperText}>{`Mode aktif: ${resolvedTheme === 'dark' ? 'Dark' : 'Light'}`}</Text>
+          <Text style={dynamic.helperText}>{`Mode aktif: ${appTheme.isDark ? 'Dark' : 'Light'}`}</Text>
         </View>
 
         <View style={dynamic.sectionCard}>

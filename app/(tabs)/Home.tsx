@@ -1,30 +1,30 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import {
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    Alert,
+    Image,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
+    FadeIn,
+    FadeInDown,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS } from '@/constants/colors';
 import { HOME_QUICK_MENU } from '@/constants/feature-menu';
-import { useThemePreference } from '@/contexts/theme-preference';
+import { useAppTheme } from '@/hooks/useAppTheme';
 import { usePrayerTimes } from '@/hooks/usePrayerTimes';
 import { useRealtimeClock } from '@/hooks/useRealtimeClock';
 import { notifyTabBarScroll } from '@/lib/tab-bar-visibility';
@@ -49,25 +49,10 @@ const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep'
 
 export default function Home() {
   const router = useRouter();
-  const { resolvedTheme } = useThemePreference();
-  const isDark = resolvedTheme === 'dark';
+  const theme = useAppTheme();
+  const { isDark } = theme;
   const now = useRealtimeClock();
   const { prayers, activePrayerIndex, countdown, city, loading: prayerLoading } = usePrayerTimes();
-  const theme = useMemo(
-    () => ({
-      bg: isDark ? '#1A130B' : '#F7F1E8',
-      text: isDark ? '#F7EFE2' : COLORS.primaryDeeper,
-      muted: isDark ? '#CCB99E' : '#7E6446',
-      card: isDark ? '#2A1F12' : '#FFFDF5',
-      cardSoft: isDark ? '#312414' : '#FFF9ED',
-      border: isDark ? '#4A3825' : '#EDDFC4',
-      gold: '#C68B2F',
-      goldSoft: isDark ? 'rgba(198,139,47,0.22)' : 'rgba(198,139,47,0.12)',
-      prayerText: isDark ? '#F5E3C7' : '#6D4D2A',
-      bodyText: isDark ? '#E6D5BD' : '#5C3D1E',
-    }),
-    [isDark]
-  );
 
   const pulseScale = useSharedValue(1);
   useEffect(() => {
